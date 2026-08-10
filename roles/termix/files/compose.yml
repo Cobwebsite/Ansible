@@ -1,0 +1,32 @@
+services:
+  termix:
+    image: ghcr.io/lukegus/termix:latest
+    container_name: termix
+    restart: unless-stopped
+    environment:
+      PORT: "8080"
+    volumes:
+      - termix_data:/app/data
+    depends_on:
+      - guacd
+    networks:
+      - termix_internal
+      - proxy
+
+  guacd:
+    image: guacamole/guacd:1.6.0
+    container_name: termix-guacd
+    restart: unless-stopped
+    networks:
+      - termix_internal
+
+volumes:
+  termix_data:
+
+networks:
+  termix_internal:
+    internal: true
+  proxy:
+    external: true
+    name: proxy
+

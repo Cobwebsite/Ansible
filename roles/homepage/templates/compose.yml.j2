@@ -1,0 +1,36 @@
+services:
+  docker-proxy:
+    image: ghcr.io/tecnativa/docker-socket-proxy:latest
+    container_name: homepage-docker-proxy
+    restart: unless-stopped
+    environment:
+      CONTAINERS: "1"
+      SERVICES: "1"
+      TASKS: "1"
+      POST: "0"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks:
+      - homepage_internal
+
+  homepage:
+    image: ghcr.io/gethomepage/homepage:latest
+    container_name: homepage
+    restart: unless-stopped
+    environment:
+      HOMEPAGE_ALLOWED_HOSTS: {{ domain | to_json }}
+    volumes:
+      - ./config:/app/config
+      - ./images:/app/public/images:ro
+    depends_on:
+      - docker-proxy
+    networks:
+      - homepage_internal
+      - proxy
+
+networks:
+  homepage_internal:
+    internal: true
+  proxy:
+    external: true
+    name: proxy

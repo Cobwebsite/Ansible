@@ -1,0 +1,16 @@
+---
+- name: Installer Termix derrière Caddy
+  hosts: "{{ target | default('all') }}"
+  become: true
+  pre_tasks:
+    - name: Valider le nom de domaine
+      ansible.builtin.assert:
+        that:
+          - domain is defined
+          - domain is match('^(?=.{1,253}$)(?!-)(?:[a-zA-Z0-9-]{1,63}\\.)+[a-zA-Z]{2,63}$')
+        fail_msg: "Fournissez un domaine valide dans la variable domain."
+  roles:
+    - docker
+    - caddy
+    - termix
+

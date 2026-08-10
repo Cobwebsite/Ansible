@@ -1,0 +1,33 @@
+---
+- name: Créer le répertoire Uptime Kuma
+  ansible.builtin.file:
+    path: /opt/docker/uptime-kuma
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Installer la stack Uptime Kuma
+  ansible.builtin.copy:
+    src: compose.yml
+    dest: /opt/docker/uptime-kuma/compose.yml
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Redémarrer Uptime Kuma
+
+- name: Démarrer Uptime Kuma
+  community.docker.docker_compose_v2:
+    project_src: /opt/docker/uptime-kuma
+    files: [compose.yml]
+    state: present
+
+- name: Ajouter la route Uptime Kuma à Caddy
+  ansible.builtin.template:
+    src: uptime-kuma.caddy.j2
+    dest: /opt/docker/caddy/sites/uptime-kuma.caddy
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Recharger Caddy
+

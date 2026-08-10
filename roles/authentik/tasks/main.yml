@@ -1,0 +1,66 @@
+---
+- name: Créer le répertoire Authentik
+  ansible.builtin.file:
+    path: /opt/docker/authentik
+    state: directory
+    owner: root
+    group: root
+    mode: "0700"
+
+- name: Vérifier si les secrets Authentik existent
+  ansible.builtin.stat:
+    path: /opt/docker/authentik/.env
+  register: authentik_env
+
+- name: Générer les secrets Authentik une seule fois
+  ansible.builtin.shell: |
+    set -o errexit -o nounset
+    umask 077
+    pg_pass="$(openssl rand -base64 36 | tr -d '\n')"
+    secret_key="$(openssl rand -base64 60 | tr -d '\n')"
+    bootstrap_password="$(openssl rand -base64 24 | tr -d '\n')"
+    printf 'PG_PASS=%s\nAUTHENTIK_SECRET_KEY=%s\nAUTHENTIK_BOOTSTRAP_PASSWORD=%s\n' \
+      "$pg_pass" "$secret_key" "$bootstrap_password" > /opt/docker/authentik/.env
+  args:
+    executable: /bin/bash
+  when: not authentik_env.stat.exists
+  no_log: true
+
+- name: Installer la stack Authentik
+  ansible.builtin.copy:
+    src: compose.yml
+    dest: /opt/docker/authentik/compose.yml
+    owner: root
+    group: root
+    mode: "0600"
+  notify: Redémarrer Authentik
+
+- name: Démarrer Authentik
+  community.docker.docker_compose_v2:
+    project_src: /opt/docker/authentik
+    files: [compose.yml]
+    state: present
+
+- name: Ajouter la route Authentik à Caddy
+  ansible.builtin.template:
+    src: authentik.caddy.j2
+    dest: /opt/docker/caddy/sites/authentik.caddy
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Recharger Caddy
+
+- name: Lire le mot de passe bootstrap Authentik lors de sa création
+  ansible.builtin.shell: sed -n 's/^AUTHENTIK_BOOTSTRAP_PASSWORD=//p' /opt/docker/authentik/.env
+  args:
+    executable: /bin/bash
+  register: authentik_bootstrap_password
+  changed_when: false
+  when: not authentik_env.stat.exists
+  no_log: true
+
+- name: Afficher les identifiants Authentik générés
+  ansible.builtin.debug:
+    msg: "Authentik : utilisateur akadmin, mot de passe {{ authentik_bootstrap_password.stdout }}"
+  when: not authentik_env.stat.exists
+

@@ -1,0 +1,54 @@
+---
+- Administration:
+{% if portainer_domain is defined %}
+    - Portainer:
+        icon: portainer.png
+        href: https://{{ portainer_domain }}
+        description: Gestion des conteneurs
+        server: local
+        container: portainer
+{% endif %}
+{% if semaphore_domain is defined %}
+    - Semaphore:
+        icon: semaphore.png
+        href: https://{{ semaphore_domain }}
+        description: Automatisation Ansible
+        server: local
+        container: semaphore
+{% endif %}
+{% if authentik_domain is defined %}
+    - Authentik:
+        icon: authentik.png
+        href: https://{{ authentik_domain }}
+        description: Identité et authentification
+        server: local
+        container: authentik-server
+{% endif %}
+
+- Accès:
+{% if termix_domain is defined %}
+    - Termix:
+        icon: termix.png
+        href: https://{{ termix_domain }}
+        description: Terminaux SSH et bureaux distants
+        server: local
+        container: termix
+{% endif %}
+
+- Supervision:
+{% if uptime_kuma_domain is defined %}
+    - Uptime Kuma:
+        icon: uptime-kuma.png
+        href: https://{{ uptime_kuma_domain }}
+        description: Disponibilité des services
+        server: local
+        container: uptime-kuma
+{% endif %}
+{% if beszel_domain is defined %}
+    - Beszel:
+        icon: beszel.png
+        href: https://{{ beszel_domain }}
+        description: Métriques des serveurs
+        server: local
+        container: beszel
+{% endif %}

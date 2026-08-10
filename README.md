@@ -40,7 +40,49 @@ Pour provisionner un nouveau VPS en une seule tâche, utiliser plutôt
 ```yaml
 portainer_domain: portainer.example.com
 semaphore_domain: semaphore.example.com
+authentik_domain: auth.example.com
+termix_domain: termix.example.com
+uptime_kuma_domain: status.example.com
+beszel_domain: monitoring.example.com
+homepage_domain: home.example.com
 ```
+
+Le master installe également Authentik, Termix avec `guacd`, Uptime Kuma 2 et le
+hub Beszel ainsi que Homepage. Toutes les stacks sont placées sous `/opt/docker`
+et seul Caddy publie des ports sur l'hôte.
+
+À la première installation, le résultat Semaphore affiche le mot de passe de
+`akadmin`. Il reste stocké pour root dans `/opt/docker/authentik/.env`.
+
+### Activer Authentik pour Portainer, Semaphore et Homepage
+
+Les routes Caddy de Portainer, Semaphore et Homepage utilisent le snippet
+`authentik`. Dans Authentik, créer pour chacun :
+
+1. un Proxy Provider en mode forward auth avec l'URL externe complète ;
+2. une Application associée à ce provider ;
+3. l'association du provider à l'Embedded Outpost.
+
+Utiliser respectivement `https://portainer.example.com`,
+`https://semaphore.example.com` et `https://home.example.com` comme external
+host. L'URL
+`/outpost.goauthentik.io/*` reste accessible sans authentification, comme requis
+par Authentik. En cas de problème, tester par exemple :
+
+```bash
+curl -I https://portainer.example.com/outpost.goauthentik.io/ping
+```
+
+Le hub Beszel est installé sans agent. Après la création du compte administrateur,
+ajouter les agents depuis son interface afin d'obtenir leur `KEY` et leur `TOKEN`.
+
+Homepage est protégé par Authentik dans le setup master. Sa configuration se
+trouve dans `/opt/docker/homepage/config` et contient les liens vers les services
+du master. L'accès en lecture à Docker passe par un socket proxy avec les requêtes
+`POST` désactivées. Le composant seul peut être installé avec
+`playbooks/installation/12-install-homepage.yml` et la variable `domain`; dans ce
+cas, la protection Authentik est désactivée sauf si
+`homepage_authentik_enabled: true` est fourni.
 
 ### Serveur slave
 

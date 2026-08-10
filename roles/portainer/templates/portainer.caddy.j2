@@ -1,5 +1,7 @@
 {{ domain }} {
     import common
-    reverse_proxy portainer:9000
+    route {
+        import authentik
+        reverse_proxy portainer:9000
+    }
 }
-

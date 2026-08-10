@@ -10,20 +10,48 @@
         that:
           - portainer_domain is defined
           - semaphore_domain is defined
+          - authentik_domain is defined
+          - termix_domain is defined
+          - uptime_kuma_domain is defined
+          - beszel_domain is defined
+          - homepage_domain is defined
           - portainer_domain is match('^(?=.{1,253}$)(?!-)(?:[a-zA-Z0-9-]{1,63}\\.)+[a-zA-Z]{2,63}$')
           - semaphore_domain is match('^(?=.{1,253}$)(?!-)(?:[a-zA-Z0-9-]{1,63}\\.)+[a-zA-Z]{2,63}$')
-          - portainer_domain != semaphore_domain
+          - authentik_domain is match('^(?=.{1,253}$)(?!-)(?:[a-zA-Z0-9-]{1,63}\\.)+[a-zA-Z]{2,63}$')
+          - termix_domain is match('^(?=.{1,253}$)(?!-)(?:[a-zA-Z0-9-]{1,63}\\.)+[a-zA-Z]{2,63}$')
+          - uptime_kuma_domain is match('^(?=.{1,253}$)(?!-)(?:[a-zA-Z0-9-]{1,63}\\.)+[a-zA-Z]{2,63}$')
+          - beszel_domain is match('^(?=.{1,253}$)(?!-)(?:[a-zA-Z0-9-]{1,63}\\.)+[a-zA-Z]{2,63}$')
+          - homepage_domain is match('^(?=.{1,253}$)(?!-)(?:[a-zA-Z0-9-]{1,63}\\.)+[a-zA-Z]{2,63}$')
+          - >-
+            [portainer_domain, semaphore_domain, authentik_domain,
+            termix_domain, uptime_kuma_domain, beszel_domain,
+            homepage_domain] | unique | length == 7
         fail_msg: >-
-          Fournissez deux domaines valides et différents dans portainer_domain
-          et semaphore_domain.
+          Fournissez sept domaines valides et différents pour Portainer,
+          Semaphore, Authentik, Termix, Uptime Kuma, Beszel et Homepage.
   roles:
     - role: docker
     - role: ssh_password
     - role: caddy
+    - role: authentik
+      vars:
+        domain: "{{ authentik_domain }}"
     - role: portainer
       vars:
         domain: "{{ portainer_domain }}"
     - role: semaphore
       vars:
         domain: "{{ semaphore_domain }}"
-
+    - role: termix
+      vars:
+        domain: "{{ termix_domain }}"
+    - role: uptime_kuma
+      vars:
+        domain: "{{ uptime_kuma_domain }}"
+    - role: beszel
+      vars:
+        domain: "{{ beszel_domain }}"
+    - role: homepage
+      vars:
+        domain: "{{ homepage_domain }}"
+        homepage_authentik_enabled: true

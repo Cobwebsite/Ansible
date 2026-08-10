@@ -1,0 +1,33 @@
+---
+- name: Créer le répertoire Beszel
+  ansible.builtin.file:
+    path: /opt/docker/beszel
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Installer la stack du hub Beszel
+  ansible.builtin.template:
+    src: compose.yml.j2
+    dest: /opt/docker/beszel/compose.yml
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Redémarrer Beszel
+
+- name: Démarrer le hub Beszel
+  community.docker.docker_compose_v2:
+    project_src: /opt/docker/beszel
+    files: [compose.yml]
+    state: present
+
+- name: Ajouter la route Beszel à Caddy
+  ansible.builtin.template:
+    src: beszel.caddy.j2
+    dest: /opt/docker/caddy/sites/beszel.caddy
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Recharger Caddy
+

@@ -1,0 +1,75 @@
+x-authentik-env: &authentik-env
+  AUTHENTIK_POSTGRESQL__HOST: database
+  AUTHENTIK_POSTGRESQL__NAME: authentik
+  AUTHENTIK_POSTGRESQL__USER: authentik
+  AUTHENTIK_POSTGRESQL__PASSWORD: ${PG_PASS}
+  AUTHENTIK_SECRET_KEY: ${AUTHENTIK_SECRET_KEY}
+
+services:
+  database:
+    image: postgres:16-alpine
+    container_name: authentik-database
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: authentik
+      POSTGRES_USER: authentik
+      POSTGRES_PASSWORD: ${PG_PASS}
+    volumes:
+      - authentik_database:/var/lib/postgresql/data
+    networks:
+      - authentik_internal
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U authentik -d authentik"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  authentik-server:
+    image: ghcr.io/goauthentik/server:latest
+    container_name: authentik-server
+    restart: unless-stopped
+    command: server
+    environment: *authentik-env
+    depends_on:
+      database:
+        condition: service_healthy
+    volumes:
+      - authentik_media:/media
+      - authentik_templates:/templates
+    networks:
+      - authentik_internal
+      - proxy
+
+  authentik-worker:
+    image: ghcr.io/goauthentik/server:latest
+    container_name: authentik-worker
+    restart: unless-stopped
+    command: worker
+    environment:
+      <<: *authentik-env
+      AUTHENTIK_BOOTSTRAP_PASSWORD: ${AUTHENTIK_BOOTSTRAP_PASSWORD}
+    depends_on:
+      database:
+        condition: service_healthy
+    user: root
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - authentik_media:/media
+      - authentik_templates:/templates
+      - authentik_certs:/certs
+    networks:
+      - authentik_internal
+      - proxy
+
+volumes:
+  authentik_database:
+  authentik_media:
+  authentik_templates:
+  authentik_certs:
+
+networks:
+  authentik_internal:
+    internal: true
+  proxy:
+    external: true
+    name: proxy

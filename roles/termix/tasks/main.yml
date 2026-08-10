@@ -1,0 +1,33 @@
+---
+- name: Créer le répertoire Termix
+  ansible.builtin.file:
+    path: /opt/docker/termix
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Installer la stack Termix
+  ansible.builtin.copy:
+    src: compose.yml
+    dest: /opt/docker/termix/compose.yml
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Redémarrer Termix
+
+- name: Démarrer Termix
+  community.docker.docker_compose_v2:
+    project_src: /opt/docker/termix
+    files: [compose.yml]
+    state: present
+
+- name: Ajouter la route Termix à Caddy
+  ansible.builtin.template:
+    src: termix.caddy.j2
+    dest: /opt/docker/caddy/sites/termix.caddy
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Recharger Caddy
+

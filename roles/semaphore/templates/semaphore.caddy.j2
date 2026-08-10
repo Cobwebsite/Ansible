@@ -1,5 +1,7 @@
 {{ domain }} {
     import common
-    reverse_proxy semaphore:3000
+    route {
+        import authentik
+        reverse_proxy semaphore:3000
+    }
 }
-

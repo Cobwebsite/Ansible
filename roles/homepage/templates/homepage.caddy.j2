@@ -1,0 +1,12 @@
+{{ domain }} {
+    import common
+{% if homepage_authentik_enabled | default(false) | bool %}
+    route {
+        import authentik
+        reverse_proxy homepage:3000
+    }
+{% else %}
+    reverse_proxy homepage:3000
+{% endif %}
+}
+
