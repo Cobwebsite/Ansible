@@ -71,6 +71,12 @@
     owner: root
     group: root
     mode: "0644"
-  notify:
-    - Valider la configuration SSH
-    - Recharger SSH
+
+- name: Valider la configuration SSH complète
+  ansible.builtin.command: /usr/sbin/sshd -t
+  changed_when: false
+
+- name: Recharger immédiatement le serveur SSH
+  ansible.builtin.service:
+    name: ssh
+    state: reloaded

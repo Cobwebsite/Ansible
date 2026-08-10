@@ -13,6 +13,7 @@
   loop:
     - /opt/docker/caddy
     - /opt/docker/caddy/sites
+    - /opt/docker/caddy/html
 
 - name: Installer le Caddyfile principal
   ansible.builtin.copy:
@@ -27,6 +28,15 @@
   ansible.builtin.copy:
     src: compose.yml
     dest: /opt/docker/caddy/compose.yml
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Redémarrer Caddy
+
+- name: Installer la page d'erreur Caddy
+  ansible.builtin.copy:
+    src: error.html
+    dest: /opt/docker/caddy/html/error.html
     owner: root
     group: root
     mode: "0644"

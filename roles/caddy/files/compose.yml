@@ -10,6 +10,7 @@ services:
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - ./sites:/etc/caddy/sites:ro
+      - ./html:/usr/share/caddy/html:ro
       - caddy_data:/data
       - caddy_config:/config
     networks:
@@ -23,4 +24,3 @@ networks:
   proxy:
     external: true
     name: proxy
-

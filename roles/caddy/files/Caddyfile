@@ -1,5 +1,14 @@
 (common) {
     encode zstd gzip
+
+    handle_errors {
+        @bad_gateway expression {err.status_code} == 502
+        handle @bad_gateway {
+            root * /usr/share/caddy/html
+            rewrite * /error.html
+            file_server
+        }
+    }
 }
 
 import /etc/caddy/sites/*.caddy
