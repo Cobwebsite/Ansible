@@ -1,0 +1,109 @@
+---
+- name: Fully restore rayuki database
+  hosts: all
+  become: true
+
+  vars:
+    local_restore_file: "/tmp/{{ restore_file }}"
+
+  tasks:
+    - name: Validate restore file
+      ansible.builtin.assert:
+        that:
+          - confirm_restore | default(false) | bool
+          - restore_file is defined
+          - restore_file | length > 0
+          - restore_file is match('^[A-Za-z0-9._-]+\.sql\.gz$')
+        fail_msg: >-
+          La restauration doit être confirmée avec confirm_restore: true et la
+          variable restore_file est obligatoire.
+          Exemple:
+          mysql_dump_2026-08-08T02-00-00.sql.gz
+
+    - name: Restore database
+      block:
+
+        - name: Download backup from SFTP
+          ansible.builtin.command:
+            argv:
+              - curl
+              - --fail
+              - --show-error
+              - --silent
+              - --user
+              - "{{ ftp_user }}:{{ ftp_password }}"
+              - --output
+              - "{{ local_restore_file }}"
+              - "sftp://{{ ftp_host }}{{ remote_ftp_path }}/{{ restore_file }}"
+          no_log: true
+
+        - name: Check downloaded backup
+          ansible.builtin.stat:
+            path: "{{ local_restore_file }}"
+          register: restore_stat
+
+        - name: Fail if backup is missing or empty
+          ansible.builtin.fail:
+            msg: "Le backup {{ restore_file }} est absent ou vide."
+          when:
+            - not restore_stat.stat.exists or restore_stat.stat.size == 0
+
+        - name: Verify gzip archive
+          ansible.builtin.command:
+            argv:
+              - gzip
+              - --test
+              - "{{ local_restore_file }}"
+          changed_when: false
+
+        - name: Drop existing database
+          ansible.builtin.shell: |
+            docker exec \
+              -e MYSQL_PWD='{{ db_password }}' \
+              {{ mysql_container }} \
+              mysql \
+              -u{{ db_user }} \
+              -e "DROP DATABASE IF EXISTS \`{{ db_name }}\`;"
+          args:
+            executable: /bin/bash
+          no_log: true
+
+        - name: Create empty database
+          ansible.builtin.shell: |
+            docker exec \
+              -e MYSQL_PWD='{{ db_password }}' \
+              {{ mysql_container }} \
+              mysql \
+              -u{{ db_user }} \
+              -e "CREATE DATABASE \`{{ db_name }}\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;"
+          args:
+            executable: /bin/bash
+          no_log: true
+
+        - name: Restore database from backup
+          ansible.builtin.shell: |
+            set -o pipefail
+
+            gzip -dc "{{ local_restore_file }}" | \
+            docker exec -i \
+              -e MYSQL_PWD='{{ db_password }}' \
+              {{ mysql_container }} \
+              mysql \
+              -u{{ db_user }} \
+              {{ db_name }}
+          args:
+            executable: /bin/bash
+          no_log: true
+
+        - name: Restore completed
+          ansible.builtin.debug:
+            msg: >-
+              La base {{ db_name }} a été complètement remplacée
+              par le backup {{ restore_file }}.
+
+      always:
+
+        - name: Remove temporary backup
+          ansible.builtin.file:
+            path: "{{ local_restore_file }}"
+            state: absent

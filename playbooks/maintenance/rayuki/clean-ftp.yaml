@@ -1,0 +1,95 @@
+---
+- name: Cleanup old Rayuki backups
+  hosts: all
+  become: true
+
+  vars:
+    retention_days: 30
+
+  tasks:
+    - name: Validate required variables
+      ansible.builtin.assert:
+        that:
+          - ftp_host is defined
+          - ftp_host | length > 0
+          - ftp_user is defined
+          - ftp_password is defined
+          - remote_ftp_path is defined
+        fail_msg: "Une ou plusieurs variables SFTP sont manquantes."
+
+    - name: Calculate retention cutoff date
+      ansible.builtin.set_fact:
+        retention_cutoff: >-
+          {{
+            (
+              ansible_facts['date_time']['epoch'] | int
+              - (retention_days | int * 86400)
+            )
+            | strftime('%Y-%m-%dT%H-%M-%S')
+          }}
+
+    - name: Display retention cutoff
+      ansible.builtin.debug:
+        msg: >-
+          Les sauvegardes Rayuki antérieures à
+          {{ retention_cutoff }}
+          seront supprimées.
+
+    - name: List remote backup files
+      ansible.builtin.command:
+        argv:
+          - curl
+          - --fail
+          - --show-error
+          - --silent
+          - --list-only
+          - --user
+          - "{{ ftp_user }}:{{ ftp_password }}"
+          - "sftp://{{ ftp_host }}{{ remote_ftp_path }}/"
+      register: remote_files
+      changed_when: false
+      no_log: true
+
+    - name: Find expired Rayuki backups
+      ansible.builtin.set_fact:
+        expired_backups: >-
+          {{
+            expired_backups | default([])
+            + [item]
+          }}
+      loop: "{{ remote_files.stdout_lines }}"
+      when:
+        - item is match('^(mysql_dump|rayuki_files)_[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}-[0-9]{2}-[0-9]{2}\.(sql|tar)\.gz$')
+        - >-
+          (
+            item
+            | regex_replace('^(mysql_dump|rayuki_files)_', '')
+            | regex_replace('\.(sql|tar)\.gz$', '')
+          ) < retention_cutoff
+
+    - name: Display backups to delete
+      ansible.builtin.debug:
+        msg: "{{ expired_backups | default([]) }}"
+
+    - name: Delete expired backups from SFTP
+      ansible.builtin.command:
+        argv:
+          - curl
+          - --fail
+          - --show-error
+          - --silent
+          - --user
+          - "{{ ftp_user }}:{{ ftp_password }}"
+          - --quote
+          - "rm {{ remote_ftp_path }}/{{ item }}"
+          - "sftp://{{ ftp_host }}/"
+      loop: "{{ expired_backups | default([]) }}"
+      no_log: true
+      when: expired_backups | default([]) | length > 0
+
+    - name: Cleanup result
+      ansible.builtin.debug:
+        msg: >-
+          Nettoyage terminé.
+          {{ expired_backups | default([]) | length }}
+          sauvegarde(s) supprimée(s).

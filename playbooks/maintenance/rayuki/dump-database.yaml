@@ -1,0 +1,95 @@
+---
+- name: Sauvegarder la base de données Rayuki
+  hosts: "{{ target | default('all') }}"
+  become: true
+
+  tasks:
+    - name: Valider les variables obligatoires
+      ansible.builtin.assert:
+        that:
+          - mysql_container is defined
+          - mysql_container | length > 0
+          - db_user is defined
+          - db_user | length > 0
+          - db_password is defined
+          - db_name is defined
+          - db_name | length > 0
+          - dump_file_local is defined
+          - dump_file_local | length > 0
+          - ftp_host is defined
+          - ftp_host | length > 0
+          - ftp_user is defined
+          - ftp_user | length > 0
+          - ftp_password is defined
+          - remote_ftp_path is defined
+          - remote_ftp_path | length > 0
+        fail_msg: "Une ou plusieurs variables de sauvegarde sont manquantes."
+
+    - name: Sauvegarder et transférer la base
+      block:
+        - name: Créer le dump MySQL compressé
+          ansible.builtin.shell: |
+            set -o errexit -o pipefail
+            docker exec \
+              -e MYSQL_PWD="$RAYUKI_DB_PASSWORD" \
+              {{ mysql_container | quote }} \
+              mysqldump \
+                --single-transaction \
+                --quick \
+                --routines \
+                --triggers \
+                -u{{ db_user | quote }} \
+                {{ db_name | quote }} \
+              | gzip > {{ (dump_file_local + '.gz') | quote }}
+          args:
+            executable: /bin/bash
+          environment:
+            RAYUKI_DB_PASSWORD: "{{ db_password }}"
+          changed_when: true
+          no_log: true
+
+        - name: Vérifier le fichier de dump
+          ansible.builtin.stat:
+            path: "{{ dump_file_local }}.gz"
+          register: dump_stat
+
+        - name: Refuser un dump absent ou vide
+          ansible.builtin.assert:
+            that:
+              - dump_stat.stat.exists
+              - dump_stat.stat.size | int > 0
+            fail_msg: "Le dump MySQL n'a pas été créé ou est vide."
+
+        - name: Vérifier l'intégrité gzip du dump
+          ansible.builtin.command:
+            argv:
+              - gzip
+              - --test
+              - "{{ dump_file_local }}.gz"
+          changed_when: false
+
+        - name: Transférer le dump sur le serveur SFTP
+          ansible.builtin.command:
+            argv:
+              - curl
+              - --fail
+              - --show-error
+              - --silent
+              - --user
+              - "{{ ftp_user }}:{{ ftp_password }}"
+              - --upload-file
+              - "{{ dump_file_local }}.gz"
+              - >-
+                sftp://{{ ftp_host }}{{ remote_ftp_path }}/mysql_dump_{{
+                ansible_facts['date_time']['date'] }}T{{
+                ansible_facts['date_time']['hour'] }}-{{
+                ansible_facts['date_time']['minute'] }}-{{
+                ansible_facts['date_time']['second'] }}.sql.gz
+          changed_when: true
+          no_log: true
+
+      always:
+        - name: Supprimer le dump temporaire local
+          ansible.builtin.file:
+            path: "{{ dump_file_local }}.gz"
+            state: absent

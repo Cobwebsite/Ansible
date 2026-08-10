@@ -1,0 +1,129 @@
+---
+- name: Backup Rayuki application files
+  hosts: all
+  become: true
+
+  vars:
+    rayuki_base_path: "/home/debian/rayuki"
+
+    rayuki_directories:
+      - wwwroot
+      - apps
+      - plugins
+      - pwa
+      - desktops
+      - users
+      - company
+      - views
+      - Storage
+
+    backup_filename: >-
+      rayuki_files_{{ ansible_facts['date_time']['date'] }}T{{ ansible_facts['date_time']['hour'] }}-{{ ansible_facts['date_time']['minute'] }}-{{ ansible_facts['date_time']['second'] }}.tar.gz
+
+    backup_file: "/tmp/{{ backup_filename }}"
+
+  tasks:
+    - name: Validate required variables
+      ansible.builtin.assert:
+        that:
+          - rayuki_container is defined
+          - rayuki_container | length > 0
+          - ftp_host is defined
+          - ftp_host | length > 0
+          - ftp_user is defined
+          - ftp_password is defined
+          - remote_ftp_path is defined
+        fail_msg: "Une ou plusieurs variables obligatoires sont manquantes."
+
+    - name: Check Rayuki directory
+      ansible.builtin.stat:
+        path: "{{ rayuki_base_path }}"
+      register: rayuki_path
+
+    - name: Fail if Rayuki directory does not exist
+      ansible.builtin.fail:
+        msg: "Le dossier {{ rayuki_base_path }} n'existe pas."
+      when: not rayuki_path.stat.exists
+
+    - name: Create Rayuki backup
+      block:
+
+        - name: Stop Rayuki container
+          ansible.builtin.command:
+            argv:
+              - docker
+              - stop
+              - "{{ rayuki_container }}"
+          register: stop_result
+          changed_when: true
+
+        - name: Create compressed archive
+          ansible.builtin.command:
+            argv: >-
+              {{
+                ['tar', '-czf', backup_file, '-C', rayuki_base_path]
+                + rayuki_directories
+              }}
+          register: tar_result
+          changed_when: true
+
+      always:
+
+        - name: Start Rayuki container
+          ansible.builtin.command:
+            argv:
+              - docker
+              - start
+              - "{{ rayuki_container }}"
+          register: start_result
+          changed_when: true
+
+    - name: Verify backup file
+      ansible.builtin.stat:
+        path: "{{ backup_file }}"
+      register: backup_stat
+
+    - name: Fail if backup is missing or empty
+      ansible.builtin.fail:
+        msg: "L'archive {{ backup_file }} n'a pas été créée ou est vide."
+      when:
+        - not backup_stat.stat.exists or backup_stat.stat.size == 0
+
+    - name: Verify tar.gz archive
+      ansible.builtin.command:
+        argv:
+          - tar
+          - -tzf
+          - "{{ backup_file }}"
+      changed_when: false
+
+    - name: Transfer and clean up backup
+      block:
+        - name: Upload backup to SFTP
+          ansible.builtin.command:
+            argv:
+              - curl
+              - --fail
+              - --show-error
+              - --silent
+              - --user
+              - "{{ ftp_user }}:{{ ftp_password }}"
+              - --upload-file
+              - "{{ backup_file }}"
+              - "sftp://{{ ftp_host }}{{ remote_ftp_path }}/{{ backup_filename }}"
+          no_log: true
+          register: upload_result
+
+      always:
+        - name: Remove local backup file
+          ansible.builtin.file:
+            path: "{{ backup_file }}"
+            state: absent
+
+    - name: Display backup information
+      ansible.builtin.debug:
+        msg: >-
+          Backup terminé :
+          {{ backup_filename }}
+          ({{ backup_stat.stat.size | human_readable }})
+

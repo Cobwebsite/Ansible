@@ -5,6 +5,7 @@
       - ca-certificates
       - curl
       - openssl
+      - python3-debian
     state: present
     update_cache: true
 
@@ -25,12 +26,26 @@
   register: docker_architecture
   changed_when: false
 
-- name: Configurer le dépôt Docker officiel
-  ansible.builtin.apt_repository:
-    repo: >-
-      deb [arch={{ docker_architecture.stdout }} signed-by=/etc/apt/keyrings/docker.asc]
-      https://download.docker.com/linux/debian {{ ansible_distribution_release }} stable
-    filename: docker
+- name: Supprimer l'ancien dépôt Docker au format sources.list
+  ansible.builtin.file:
+    path: /etc/apt/sources.list.d/docker.list
+    state: absent
+
+- name: Configurer le dépôt Docker officiel au format DEB822
+  ansible.builtin.deb822_repository:
+    name: docker
+    types:
+      - deb
+    uris:
+      - https://download.docker.com/linux/debian
+    suites:
+      - "{{ ansible_facts['distribution_release'] }}"
+    components:
+      - stable
+    architectures:
+      - "{{ docker_architecture.stdout }}"
+    signed_by: /etc/apt/keyrings/docker.asc
+    enabled: true
     state: present
 
 - name: Installer Docker Engine et Compose

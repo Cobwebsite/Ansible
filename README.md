@@ -73,3 +73,20 @@ de la première exécution. Il reste disponible uniquement pour root dans
 `/root/.ansible-generated-credentials/debian-password`. Les exécutions suivantes
 le conservent. Pour forcer sa rotation, exécuter le playbook SSH ou le master avec
 `regenerate_debian_password: true`; le nouveau mot de passe sera alors affiché.
+
+## Maintenance
+
+Le template `playbooks/maintenance/general/disk-space.yaml` contrôle par défaut
+la partition `/` avec un seuil de 85 %. Il envoie une seule alerte Telegram lors
+du dépassement, puis une notification de retour à la normale. Configurer dans
+Semaphore :
+
+```yaml
+telegram_bot_token: "valeur secrète"
+telegram_chat_id: "123456789"
+disk_usage_threshold: 85
+```
+
+Les restaurations Rayuki exigent volontairement `confirm_restore: true`. Les
+mots de passe FTP et de base de données doivent être enregistrés comme variables
+secrètes dans Semaphore.

@@ -1,0 +1,138 @@
+---
+- name: Fully restore Rayuki application files
+  hosts: all
+  become: true
+
+  vars:
+    rayuki_base_path: "/home/debian/rayuki"
+
+    rayuki_directories:
+      - wwwroot
+      - apps
+      - plugins
+      - pwa
+      - desktops
+      - users
+      - company
+      - views
+      - Storage
+
+    local_restore_file: "/tmp/{{ restore_file }}"
+
+  tasks:
+    - name: Validate required variables
+      ansible.builtin.assert:
+        that:
+          - confirm_restore | default(false) | bool
+          - restore_file is defined
+          - restore_file | length > 0
+          - restore_file is match('^rayuki_files_[A-Za-z0-9._:-]+\.tar\.gz$')
+          - rayuki_container is defined
+          - rayuki_container | length > 0
+          - ftp_host is defined
+          - ftp_user is defined
+          - ftp_password is defined
+          - remote_ftp_path is defined
+        fail_msg: >-
+          La restauration doit être confirmée avec confirm_restore: true et une
+          variable obligatoire est manquante.
+          restore_file doit par exemple contenir :
+          rayuki_files_2026-08-08T08-30-15.tar.gz
+
+    - name: Download backup from SFTP
+      ansible.builtin.command:
+        argv:
+          - curl
+          - --fail
+          - --show-error
+          - --silent
+          - --user
+          - "{{ ftp_user }}:{{ ftp_password }}"
+          - --output
+          - "{{ local_restore_file }}"
+          - "sftp://{{ ftp_host }}{{ remote_ftp_path }}/{{ restore_file }}"
+      no_log: true
+      register: download_result
+
+    - name: Check downloaded backup
+      ansible.builtin.stat:
+        path: "{{ local_restore_file }}"
+      register: restore_stat
+
+    - name: Fail if backup is missing or empty
+      ansible.builtin.fail:
+        msg: "Le backup {{ restore_file }} est absent ou vide."
+      when:
+        - not restore_stat.stat.exists or restore_stat.stat.size == 0
+
+    - name: Verify tar.gz archive
+      ansible.builtin.command:
+        argv:
+          - tar
+          - -tzf
+          - "{{ local_restore_file }}"
+      changed_when: false
+
+    - name: Ensure Rayuki base directory exists
+      ansible.builtin.file:
+        path: "{{ rayuki_base_path }}"
+        state: directory
+
+    - name: Restore Rayuki files
+      block:
+
+        - name: Stop Rayuki container
+          ansible.builtin.command:
+            argv:
+              - docker
+              - stop
+              - "{{ rayuki_container }}"
+          changed_when: true
+
+        - name: Remove current Rayuki directories
+          ansible.builtin.file:
+            path: "{{ rayuki_base_path }}/{{ item }}"
+            state: absent
+          loop: "{{ rayuki_directories }}"
+
+        - name: Extract Rayuki backup
+          ansible.builtin.unarchive:
+            src: "{{ local_restore_file }}"
+            dest: "{{ rayuki_base_path }}"
+            remote_src: true
+
+        - name: Verify restored directories
+          ansible.builtin.stat:
+            path: "{{ rayuki_base_path }}/{{ item }}"
+          loop: "{{ rayuki_directories }}"
+          register: restored_directories
+
+        - name: Fail if a directory was not restored
+          ansible.builtin.fail:
+            msg: >-
+              Le dossier
+              {{ item.item }}
+              n'a pas été restauré correctement.
+          when: not item.stat.exists
+          loop: "{{ restored_directories.results }}"
+
+      always:
+
+        - name: Start Rayuki container
+          ansible.builtin.command:
+            argv:
+              - docker
+              - start
+              - "{{ rayuki_container }}"
+          changed_when: true
+
+        - name: Remove temporary restore file
+          ansible.builtin.file:
+            path: "{{ local_restore_file }}"
+            state: absent
+
+    - name: Restore completed
+      ansible.builtin.debug:
+        msg: >-
+          Les fichiers Rayuki ont été complètement remplacés
+          par le backup {{ restore_file }}.

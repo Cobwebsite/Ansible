@@ -1,0 +1,115 @@
+---
+- name: Surveiller l'espace disque
+  hosts: "{{ target | default('all') }}"
+  become: true
+
+  vars:
+    disk_mountpoint: /
+    disk_usage_threshold: 85
+    disk_alert_state_dir: /var/lib/ansible-maintenance
+    disk_alert_state_file: "{{ disk_alert_state_dir }}/disk-space-root.alert"
+
+  tasks:
+    - name: Valider la configuration Telegram et le seuil
+      ansible.builtin.assert:
+        that:
+          - telegram_bot_token is defined
+          - telegram_bot_token | length > 0
+          - telegram_chat_id is defined
+          - telegram_chat_id | string | length > 0
+          - disk_usage_threshold | int > 0
+          - disk_usage_threshold | int < 100
+        fail_msg: >-
+          telegram_bot_token, telegram_chat_id et un seuil compris entre 1 et
+          99 sont obligatoires.
+
+    - name: Lire le pourcentage d'utilisation de la partition
+      ansible.builtin.shell: >-
+        set -o pipefail &&
+        df --output=pcent {{ disk_mountpoint | quote }} |
+        tail -n 1 | tr -dc '0-9'
+      args:
+        executable: /bin/bash
+      register: disk_usage_result
+      changed_when: false
+      check_mode: false
+
+    - name: Mémoriser l'utilisation du disque
+      ansible.builtin.set_fact:
+        disk_usage_percent: "{{ disk_usage_result.stdout | int }}"
+
+    - name: Créer le répertoire d'état des alertes
+      ansible.builtin.file:
+        path: "{{ disk_alert_state_dir }}"
+        state: directory
+        owner: root
+        group: root
+        mode: "0755"
+
+    - name: Vérifier si une alerte est déjà active
+      ansible.builtin.stat:
+        path: "{{ disk_alert_state_file }}"
+      register: disk_alert_state
+
+    - name: Envoyer l'alerte Telegram de manque d'espace
+      ansible.builtin.uri:
+        url: "https://api.telegram.org/bot{{ telegram_bot_token }}/sendMessage"
+        method: POST
+        body_format: form-urlencoded
+        body:
+          chat_id: "{{ telegram_chat_id }}"
+          text: |
+            🚨 Espace disque faible
+            Serveur : {{ inventory_hostname }}
+            Partition : {{ disk_mountpoint }}
+            Utilisation : {{ disk_usage_percent }} %
+            Seuil : {{ disk_usage_threshold }} %
+        status_code: 200
+      when:
+        - disk_usage_percent | int >= disk_usage_threshold | int
+        - not disk_alert_state.stat.exists
+      no_log: true
+
+    - name: Marquer l'alerte comme active
+      ansible.builtin.copy:
+        dest: "{{ disk_alert_state_file }}"
+        content: "{{ disk_usage_percent }}\n"
+        owner: root
+        group: root
+        mode: "0644"
+      when:
+        - disk_usage_percent | int >= disk_usage_threshold | int
+        - not disk_alert_state.stat.exists
+
+    - name: Envoyer le retour à la normale sur Telegram
+      ansible.builtin.uri:
+        url: "https://api.telegram.org/bot{{ telegram_bot_token }}/sendMessage"
+        method: POST
+        body_format: form-urlencoded
+        body:
+          chat_id: "{{ telegram_chat_id }}"
+          text: |
+            ✅ Espace disque revenu à la normale
+            Serveur : {{ inventory_hostname }}
+            Partition : {{ disk_mountpoint }}
+            Utilisation : {{ disk_usage_percent }} %
+            Seuil : {{ disk_usage_threshold }} %
+        status_code: 200
+      when:
+        - disk_usage_percent | int < disk_usage_threshold | int
+        - disk_alert_state.stat.exists
+      no_log: true
+
+    - name: Effacer l'état d'alerte après rétablissement
+      ansible.builtin.file:
+        path: "{{ disk_alert_state_file }}"
+        state: absent
+      when:
+        - disk_usage_percent | int < disk_usage_threshold | int
+        - disk_alert_state.stat.exists
+
+    - name: Afficher l'état de l'espace disque
+      ansible.builtin.debug:
+        msg: >-
+          {{ inventory_hostname }} : {{ disk_mountpoint }} est utilisé à
+          {{ disk_usage_percent }} % (seuil {{ disk_usage_threshold }} %).
