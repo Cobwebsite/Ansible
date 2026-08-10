@@ -1,0 +1,34 @@
+---
+- name: Créer le répertoire Portainer Agent
+  ansible.builtin.file:
+    path: /opt/docker/portainer-agent
+    state: directory
+    owner: root
+    group: root
+    mode: "0700"
+
+- name: Installer la stack Portainer Agent sans port public
+  ansible.builtin.template:
+    src: compose.yml.j2
+    dest: /opt/docker/portainer-agent/compose.yml
+    owner: root
+    group: root
+    mode: "0600"
+  notify: Redémarrer Portainer Agent
+
+- name: Démarrer Portainer Agent
+  community.docker.docker_compose_v2:
+    project_src: /opt/docker/portainer-agent
+    files:
+      - compose.yml
+    state: present
+
+- name: Ajouter la route Portainer Agent à Caddy
+  ansible.builtin.template:
+    src: portainer-agent.caddy.j2
+    dest: /opt/docker/caddy/sites/portainer-agent.caddy
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Recharger Caddy
+

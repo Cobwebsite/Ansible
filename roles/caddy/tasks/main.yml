@@ -1,0 +1,40 @@
+---
+- name: Créer le réseau proxy
+  community.docker.docker_network:
+    name: proxy
+
+- name: Créer les répertoires Caddy
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  loop:
+    - /opt/docker/caddy
+    - /opt/docker/caddy/sites
+
+- name: Installer le Caddyfile principal
+  ansible.builtin.copy:
+    src: Caddyfile
+    dest: /opt/docker/caddy/Caddyfile
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Redémarrer Caddy
+
+- name: Installer la stack Caddy
+  ansible.builtin.copy:
+    src: compose.yml
+    dest: /opt/docker/caddy/compose.yml
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Redémarrer Caddy
+
+- name: Démarrer Caddy
+  community.docker.docker_compose_v2:
+    project_src: /opt/docker/caddy
+    files:
+      - compose.yml
+    state: present

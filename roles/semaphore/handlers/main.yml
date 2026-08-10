@@ -1,0 +1,10 @@
+---
+- name: Redémarrer Semaphore
+  community.docker.docker_compose_v2:
+    project_src: /opt/docker/semaphore
+    files: [compose.yml]
+    state: restarted
+
+- name: Recharger Caddy
+  ansible.builtin.command: docker exec caddy caddy reload --config /etc/caddy/Caddyfile
+  changed_when: true

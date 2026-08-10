@@ -1,0 +1,76 @@
+---
+- name: Vérifier que l'utilisateur existe
+  ansible.builtin.getent:
+    database: passwd
+    key: "{{ ssh_user }}"
+
+- name: Installer OpenSSL pour la génération du mot de passe
+  ansible.builtin.apt:
+    name: openssl
+    state: present
+    update_cache: true
+
+- name: Créer le répertoire sécurisé des identifiants générés
+  ansible.builtin.file:
+    path: /root/.ansible-generated-credentials
+    state: directory
+    owner: root
+    group: root
+    mode: "0700"
+
+- name: Vérifier si le mot de passe Debian a déjà été généré
+  ansible.builtin.stat:
+    path: /root/.ansible-generated-credentials/debian-password
+  register: debian_password_file
+
+- name: Générer le mot de passe Debian
+  ansible.builtin.shell: >-
+    umask 077 && openssl rand -base64 24 | tr -d '\n'
+    > /root/.ansible-generated-credentials/debian-password
+  args:
+    executable: /bin/bash
+  when: >-
+    not debian_password_file.stat.exists or
+    (regenerate_debian_password | default(false) | bool)
+  no_log: true
+
+- name: Lire le mot de passe Debian généré
+  ansible.builtin.slurp:
+    src: /root/.ansible-generated-credentials/debian-password
+  register: debian_password_content
+  no_log: true
+
+- name: Changer le mot de passe de l'utilisateur
+  ansible.builtin.command:
+    cmd: chpasswd
+    stdin: "{{ ssh_user }}:{{ debian_password_content.content | b64decode }}"
+  changed_when: >-
+    not debian_password_file.stat.exists or
+    (regenerate_debian_password | default(false) | bool)
+  when: >-
+    not debian_password_file.stat.exists or
+    (regenerate_debian_password | default(false) | bool)
+  no_log: true
+
+- name: Afficher le mot de passe Debian nouvellement généré
+  ansible.builtin.debug:
+    msg: >-
+      Mot de passe de {{ ssh_user }} :
+      {{ debian_password_content.content | b64decode }}
+  when: >-
+    not debian_password_file.stat.exists or
+    (regenerate_debian_password | default(false) | bool)
+
+- name: Autoriser l'authentification SSH par mot de passe
+  ansible.builtin.copy:
+    # OpenSSH conserve la première valeur rencontrée. Ce fichier doit donc
+    # précéder le 50-cloud-init.conf des images cloud Debian.
+    dest: /etc/ssh/sshd_config.d/00-password-authentication.conf
+    content: |
+      PasswordAuthentication yes
+    owner: root
+    group: root
+    mode: "0644"
+  notify:
+    - Valider la configuration SSH
+    - Recharger SSH

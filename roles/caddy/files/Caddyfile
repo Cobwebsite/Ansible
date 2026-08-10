@@ -1,0 +1,5 @@
+(common) {
+    encode zstd gzip
+}
+
+import /etc/caddy/sites/*.caddy

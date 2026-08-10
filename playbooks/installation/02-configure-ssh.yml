@@ -1,0 +1,8 @@
+---
+- name: Autoriser SSH par mot de passe et changer le mot de passe Debian
+  hosts: "{{ target | default('all') }}"
+  become: true
+  vars:
+    ssh_user: debian
+  roles:
+    - ssh_password

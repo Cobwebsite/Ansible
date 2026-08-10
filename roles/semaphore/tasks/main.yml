@@ -1,0 +1,67 @@
+---
+- name: Créer le répertoire Semaphore
+  ansible.builtin.file:
+    path: /opt/docker/semaphore
+    state: directory
+    owner: root
+    group: root
+    mode: "0700"
+
+- name: Vérifier si les secrets Semaphore existent
+  ansible.builtin.stat:
+    path: /opt/docker/semaphore/.env
+  register: semaphore_env
+
+- name: Générer les secrets Semaphore une seule fois
+  ansible.builtin.shell: |
+    set -o errexit -o nounset
+    umask 077
+    db_password="$(openssl rand -hex 24)"
+    admin_password="$(openssl rand -base64 24 | tr -d '\n')"
+    encryption_key="$(openssl rand -base64 32 | tr -d '\n')"
+    printf 'SEMAPHORE_DB_PASSWORD=%s\nSEMAPHORE_ADMIN_PASSWORD=%s\nSEMAPHORE_ACCESS_KEY_ENCRYPTION=%s\n' \
+      "$db_password" "$admin_password" "$encryption_key" > /opt/docker/semaphore/.env
+  args:
+    executable: /bin/bash
+  when: not semaphore_env.stat.exists
+  no_log: true
+
+- name: Installer la stack Semaphore sans port public
+  ansible.builtin.copy:
+    src: compose.yml
+    dest: /opt/docker/semaphore/compose.yml
+    owner: root
+    group: root
+    mode: "0600"
+  notify: Redémarrer Semaphore
+
+- name: Démarrer Semaphore
+  community.docker.docker_compose_v2:
+    project_src: /opt/docker/semaphore
+    files:
+      - compose.yml
+    state: present
+
+- name: Ajouter la route Semaphore à Caddy
+  ansible.builtin.template:
+    src: semaphore.caddy.j2
+    dest: /opt/docker/caddy/sites/semaphore.caddy
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Recharger Caddy
+
+- name: Lire le mot de passe administrateur lors de sa création
+  ansible.builtin.shell: >-
+    sed -n 's/^SEMAPHORE_ADMIN_PASSWORD=//p' /opt/docker/semaphore/.env
+  args:
+    executable: /bin/bash
+  register: semaphore_admin_password
+  changed_when: false
+  when: not semaphore_env.stat.exists
+  no_log: true
+
+- name: Afficher les identifiants Semaphore générés
+  ansible.builtin.debug:
+    msg: "Semaphore: utilisateur admin, mot de passe {{ semaphore_admin_password.stdout }}"
+  when: not semaphore_env.stat.exists

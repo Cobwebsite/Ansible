@@ -1,0 +1,33 @@
+---
+- name: Créer le répertoire Portainer
+  ansible.builtin.file:
+    path: /opt/docker/portainer
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Installer la stack Portainer sans port public
+  ansible.builtin.copy:
+    src: compose.yml
+    dest: /opt/docker/portainer/compose.yml
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Redémarrer Portainer
+
+- name: Démarrer Portainer
+  community.docker.docker_compose_v2:
+    project_src: /opt/docker/portainer
+    files:
+      - compose.yml
+    state: present
+
+- name: Ajouter la route Portainer à Caddy
+  ansible.builtin.template:
+    src: portainer.caddy.j2
+    dest: /opt/docker/caddy/sites/portainer.caddy
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Recharger Caddy

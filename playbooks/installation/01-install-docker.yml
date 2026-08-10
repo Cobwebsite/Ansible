@@ -1,0 +1,6 @@
+---
+- name: Installer Docker sur Debian 13
+  hosts: "{{ target | default('all') }}"
+  become: true
+  roles:
+    - docker

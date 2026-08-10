@@ -1,0 +1,9 @@
+{{ domain }} {
+    import common
+    reverse_proxy https://portainer-agent:9001 {
+        transport http {
+            tls_insecure_skip_verify
+        }
+    }
+}
+

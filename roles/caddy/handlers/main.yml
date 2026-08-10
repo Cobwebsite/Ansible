@@ -1,0 +1,7 @@
+---
+- name: Redémarrer Caddy
+  community.docker.docker_compose_v2:
+    project_src: /opt/docker/caddy
+    files:
+      - compose.yml
+    state: restarted

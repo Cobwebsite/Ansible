@@ -1,0 +1,7 @@
+---
+- name: Installer Caddy avec Docker
+  hosts: "{{ target | default('all') }}"
+  become: true
+  roles:
+    - docker
+    - caddy

@@ -1,0 +1,23 @@
+---
+- name: Provisionner entièrement un serveur slave Debian 13
+  hosts: "{{ target | default('all') }}"
+  become: true
+  vars:
+    ssh_user: debian
+  pre_tasks:
+    - name: Valider le nom de domaine de Portainer Agent
+      ansible.builtin.assert:
+        that:
+          - portainer_agent_domain is defined
+          - portainer_agent_domain is match('^(?=.{1,253}$)(?!-)(?:[a-zA-Z0-9-]{1,63}\\.)+[a-zA-Z]{2,63}$')
+        fail_msg: >-
+          Fournissez un domaine valide dans la variable
+          portainer_agent_domain.
+  roles:
+    - role: docker
+    - role: ssh_password
+    - role: caddy
+    - role: portainer_agent
+      vars:
+        domain: "{{ portainer_agent_domain }}"
+

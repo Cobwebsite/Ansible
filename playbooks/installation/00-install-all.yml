@@ -1,0 +1,29 @@
+---
+- name: Provisionner entièrement le VPS Debian 13
+  hosts: "{{ target | default('all') }}"
+  become: true
+  vars:
+    ssh_user: debian
+  pre_tasks:
+    - name: Valider les noms de domaine
+      ansible.builtin.assert:
+        that:
+          - portainer_domain is defined
+          - semaphore_domain is defined
+          - portainer_domain is match('^(?=.{1,253}$)(?!-)(?:[a-zA-Z0-9-]{1,63}\\.)+[a-zA-Z]{2,63}$')
+          - semaphore_domain is match('^(?=.{1,253}$)(?!-)(?:[a-zA-Z0-9-]{1,63}\\.)+[a-zA-Z]{2,63}$')
+          - portainer_domain != semaphore_domain
+        fail_msg: >-
+          Fournissez deux domaines valides et différents dans portainer_domain
+          et semaphore_domain.
+  roles:
+    - role: docker
+    - role: ssh_password
+    - role: caddy
+    - role: portainer
+      vars:
+        domain: "{{ portainer_domain }}"
+    - role: semaphore
+      vars:
+        domain: "{{ semaphore_domain }}"
+

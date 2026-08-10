@@ -1,0 +1,12 @@
+---
+- name: Redémarrer Portainer Agent
+  community.docker.docker_compose_v2:
+    project_src: /opt/docker/portainer-agent
+    files:
+      - compose.yml
+    state: restarted
+
+- name: Recharger Caddy
+  ansible.builtin.command: docker exec caddy caddy reload --config /etc/caddy/Caddyfile
+  changed_when: true
+
