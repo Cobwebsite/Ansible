@@ -26,21 +26,14 @@
   when: not semaphore_env.stat.exists
   no_log: true
 
-- name: Lire les secrets SSO Authentik pour Semaphore
-  ansible.builtin.slurp:
-    src: /opt/docker/authentik/sso.env
-  register: semaphore_sso_secrets_file
-  when: semaphore_oidc_enabled | default(false) | bool
-  no_log: true
-
-- name: Préparer la configuration OIDC Semaphore
-  ansible.builtin.set_fact:
-    semaphore_oidc_client_id: >-
-      {{ (semaphore_sso_secrets_file.content | b64decode |
-          regex_search('(?m)^SEMAPHORE_OIDC_CLIENT_ID=(.+)$', '\\1'))[0] }}
-    semaphore_oidc_client_secret: >-
-      {{ (semaphore_sso_secrets_file.content | b64decode |
-          regex_search('(?m)^SEMAPHORE_OIDC_CLIENT_SECRET=(.+)$', '\\1'))[0] }}
+- name: Vérifier que le rôle Authentik SSO a préparé Semaphore
+  ansible.builtin.assert:
+    that:
+      - semaphore_oidc_client_id is defined
+      - semaphore_oidc_client_secret is defined
+      - semaphore_oidc_client_id | length > 0
+      - semaphore_oidc_client_secret | length > 0
+    fail_msg: Exécutez le rôle authentik_sso avant le rôle semaphore.
   when: semaphore_oidc_enabled | default(false) | bool
   no_log: true
 

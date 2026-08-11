@@ -60,22 +60,20 @@
   register: portainer_admin_password_secret
   no_log: true
 
-- name: Lire les secrets SSO Authentik pour Portainer
-  ansible.builtin.slurp:
-    src: /opt/docker/authentik/sso.env
-  register: portainer_sso_secrets_file
+- name: Préparer le mot de passe pour l'API Portainer
+  ansible.builtin.set_fact:
+    portainer_admin_password: "{{ portainer_admin_password_secret.content | b64decode }}"
   when: portainer_oidc_enabled | default(false) | bool
   no_log: true
 
-- name: Préparer la configuration OIDC Portainer
-  ansible.builtin.set_fact:
-    portainer_admin_password: "{{ portainer_admin_password_secret.content | b64decode }}"
-    portainer_oidc_client_id: >-
-      {{ (portainer_sso_secrets_file.content | b64decode |
-          regex_search('(?m)^PORTAINER_OIDC_CLIENT_ID=(.+)$', '\\1'))[0] }}
-    portainer_oidc_client_secret: >-
-      {{ (portainer_sso_secrets_file.content | b64decode |
-          regex_search('(?m)^PORTAINER_OIDC_CLIENT_SECRET=(.+)$', '\\1'))[0] }}
+- name: Vérifier que le rôle Authentik SSO a préparé Portainer
+  ansible.builtin.assert:
+    that:
+      - portainer_oidc_client_id is defined
+      - portainer_oidc_client_secret is defined
+      - portainer_oidc_client_id | length > 0
+      - portainer_oidc_client_secret | length > 0
+    fail_msg: Exécutez le rôle authentik_sso avant le rôle portainer.
   when: portainer_oidc_enabled | default(false) | bool
   no_log: true
 

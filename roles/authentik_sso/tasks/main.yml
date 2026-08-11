@@ -23,50 +23,76 @@
     path: /opt/docker/authentik/sso.env
   register: authentik_sso_env
 
+- name: Vérifier le contenu du fichier de secrets OIDC
+  ansible.builtin.shell: |
+    set -o errexit
+    test "$(grep -cE '^(PORTAINER|SEMAPHORE)_OIDC_CLIENT_(ID|SECRET)=.+' /opt/docker/authentik/sso.env)" -eq 4
+  args:
+    executable: /bin/bash
+  register: authentik_sso_env_validation
+  changed_when: false
+  failed_when: false
+  when: authentik_sso_env.stat.exists
+  no_log: true
+
 - name: Générer les secrets OIDC une seule fois
   ansible.builtin.shell: |
     set -o errexit -o nounset
     umask 077
-    printf 'PORTAINER_OIDC_CLIENT_ID=%s\n' "$(openssl rand -hex 24)"
-    printf 'PORTAINER_OIDC_CLIENT_SECRET=%s\n' "$(openssl rand -hex 48)"
-    printf 'SEMAPHORE_OIDC_CLIENT_ID=%s\n' "$(openssl rand -hex 24)"
-    printf 'SEMAPHORE_OIDC_CLIENT_SECRET=%s\n' "$(openssl rand -hex 48)"
+    {
+      printf 'PORTAINER_OIDC_CLIENT_ID=%s\n' "$(openssl rand -hex 24)"
+      printf 'PORTAINER_OIDC_CLIENT_SECRET=%s\n' "$(openssl rand -hex 48)"
+      printf 'SEMAPHORE_OIDC_CLIENT_ID=%s\n' "$(openssl rand -hex 24)"
+      printf 'SEMAPHORE_OIDC_CLIENT_SECRET=%s\n' "$(openssl rand -hex 48)"
+    } > /opt/docker/authentik/sso.env
   args:
     executable: /bin/bash
-  register: authentik_sso_generated_secrets
-  when: not authentik_sso_env.stat.exists
+  when: >-
+    not authentik_sso_env.stat.exists or
+    (authentik_sso_env_validation.rc | default(1)) != 0
   no_log: true
 
-- name: Enregistrer les secrets OIDC générés
-  ansible.builtin.copy:
-    content: "{{ authentik_sso_generated_secrets.stdout }}\n"
-    dest: /opt/docker/authentik/sso.env
+- name: Protéger le fichier des secrets OIDC
+  ansible.builtin.file:
+    path: /opt/docker/authentik/sso.env
     owner: root
     group: root
     mode: "0600"
-  when: not authentik_sso_env.stat.exists
-  no_log: true
 
-- name: Lire les secrets OIDC
-  ansible.builtin.slurp:
-    src: /opt/docker/authentik/sso.env
-  register: authentik_sso_secrets_file
+- name: Lire chaque secret OIDC
+  ansible.builtin.command:
+    argv:
+      - awk
+      - -F=
+      - '$1 == ENVIRON["SSO_KEY"] { print substr($0, index($0, "=") + 1) }'
+      - /opt/docker/authentik/sso.env
+  environment:
+    SSO_KEY: "{{ item }}"
+  loop:
+    - PORTAINER_OIDC_CLIENT_ID
+    - PORTAINER_OIDC_CLIENT_SECRET
+    - SEMAPHORE_OIDC_CLIENT_ID
+    - SEMAPHORE_OIDC_CLIENT_SECRET
+  register: authentik_sso_secret_values
+  changed_when: false
   no_log: true
 
 - name: Préparer les secrets OIDC pour les templates
   ansible.builtin.set_fact:
-    portainer_oidc_client_id: >-
-      {{ (authentik_sso_secrets_file.content | b64decode |
-          regex_search('(?m)^PORTAINER_OIDC_CLIENT_ID=(.+)$', '\\1'))[0] }}
-    portainer_oidc_client_secret: >-
-      {{ (authentik_sso_secrets_file.content | b64decode |
-          regex_search('(?m)^PORTAINER_OIDC_CLIENT_SECRET=(.+)$', '\\1'))[0] }}
-    semaphore_oidc_client_id: >-
-      {{ (authentik_sso_secrets_file.content | b64decode |
-          regex_search('(?m)^SEMAPHORE_OIDC_CLIENT_ID=(.+)$', '\\1'))[0] }}
-    semaphore_oidc_client_secret: >-
-      {{ (authentik_sso_secrets_file.content | b64decode |
-          regex_search('(?m)^SEMAPHORE_OIDC_CLIENT_SECRET=(.+)$', '\\1'))[0] }}
+    portainer_oidc_client_id: "{{ authentik_sso_secret_values.results[0].stdout }}"
+    portainer_oidc_client_secret: "{{ authentik_sso_secret_values.results[1].stdout }}"
+    semaphore_oidc_client_id: "{{ authentik_sso_secret_values.results[2].stdout }}"
+    semaphore_oidc_client_secret: "{{ authentik_sso_secret_values.results[3].stdout }}"
+  no_log: true
+
+- name: Valider les secrets OIDC chargés
+  ansible.builtin.assert:
+    that:
+      - portainer_oidc_client_id | length > 0
+      - portainer_oidc_client_secret | length > 0
+      - semaphore_oidc_client_id | length > 0
+      - semaphore_oidc_client_secret | length > 0
+    fail_msg: Le fichier /opt/docker/authentik/sso.env est invalide.
   no_log: true
 
 - name: Déployer les applications OIDC dans Authentik
