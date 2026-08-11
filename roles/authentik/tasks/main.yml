@@ -1,11 +1,16 @@
 ---
-- name: Créer le répertoire Authentik
+- name: Créer les répertoires Authentik
   ansible.builtin.file:
-    path: /opt/docker/authentik
+    path: "{{ item }}"
     state: directory
     owner: root
     group: root
     mode: "0700"
+  loop:
+    - /opt/docker/authentik
+    - /opt/docker/authentik/data
+    - /opt/docker/authentik/certs
+    - /opt/docker/authentik/custom-templates
 
 - name: Vérifier si les secrets Authentik existent
   ansible.builtin.stat:
@@ -33,13 +38,22 @@
     owner: root
     group: root
     mode: "0600"
-  notify: Redémarrer Authentik
 
 - name: Démarrer Authentik
   community.docker.docker_compose_v2:
     project_src: /opt/docker/authentik
     files: [compose.yml]
     state: present
+
+- name: Attendre que le worker Authentik soit prêt
+  community.docker.docker_container_info:
+    name: authentik-worker
+  register: authentik_worker_info
+  until:
+    - authentik_worker_info.exists
+    - authentik_worker_info.container.State.Health.Status == 'healthy'
+  retries: 30
+  delay: 10
 
 - name: Ajouter la route Authentik à Caddy
   ansible.builtin.template:
@@ -63,4 +77,3 @@
   ansible.builtin.debug:
     msg: "Authentik : utilisateur akadmin, mot de passe {{ authentik_bootstrap_password.stdout }}"
   when: not authentik_env.stat.exists
-

@@ -1,71 +1,71 @@
 x-authentik-env: &authentik-env
-  AUTHENTIK_POSTGRESQL__HOST: database
+  AUTHENTIK_POSTGRESQL__HOST: postgresql
   AUTHENTIK_POSTGRESQL__NAME: authentik
   AUTHENTIK_POSTGRESQL__USER: authentik
   AUTHENTIK_POSTGRESQL__PASSWORD: ${PG_PASS}
-  AUTHENTIK_SECRET_KEY: ${AUTHENTIK_SECRET_KEY}
+  AUTHENTIK_SECRET_KEY: ${AUTHENTIK_SECRET_KEY:?secret key required}
 
 services:
-  database:
-    image: postgres:16-alpine
-    container_name: authentik-database
+  postgresql:
+    image: docker.io/library/postgres:16-alpine
+    container_name: authentik-postgresql
     restart: unless-stopped
     environment:
       POSTGRES_DB: authentik
       POSTGRES_USER: authentik
-      POSTGRES_PASSWORD: ${PG_PASS}
+      POSTGRES_PASSWORD: ${PG_PASS:?database password required}
     volumes:
-      - authentik_database:/var/lib/postgresql/data
+      - database:/var/lib/postgresql/data
     networks:
       - authentik_internal
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U authentik -d authentik"]
-      interval: 10s
+      test: ["CMD-SHELL", "pg_isready -d $${POSTGRES_DB} -U $${POSTGRES_USER}"]
+      start_period: 20s
+      interval: 30s
       timeout: 5s
       retries: 5
 
   authentik-server:
-    image: ghcr.io/goauthentik/server:latest
+    image: ${AUTHENTIK_IMAGE:-ghcr.io/goauthentik/server}:${AUTHENTIK_TAG:-2026.5.6}
     container_name: authentik-server
     restart: unless-stopped
     command: server
+    shm_size: 512mb
     environment: *authentik-env
     depends_on:
-      database:
+      postgresql:
         condition: service_healthy
     volumes:
-      - authentik_media:/media
-      - authentik_templates:/templates
+      - ./data:/data
+      - ./custom-templates:/templates
     networks:
       - authentik_internal
       - proxy
 
   authentik-worker:
-    image: ghcr.io/goauthentik/server:latest
+    image: ${AUTHENTIK_IMAGE:-ghcr.io/goauthentik/server}:${AUTHENTIK_TAG:-2026.5.6}
     container_name: authentik-worker
     restart: unless-stopped
     command: worker
+    shm_size: 512mb
     environment:
       <<: *authentik-env
       AUTHENTIK_BOOTSTRAP_PASSWORD: ${AUTHENTIK_BOOTSTRAP_PASSWORD}
     depends_on:
-      database:
+      postgresql:
         condition: service_healthy
     user: root
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
-      - authentik_media:/media
-      - authentik_templates:/templates
-      - authentik_certs:/certs
+      - ./data:/data
+      - ./certs:/certs
+      - ./custom-templates:/templates
     networks:
       - authentik_internal
       - proxy
 
 volumes:
-  authentik_database:
-  authentik_media:
-  authentik_templates:
-  authentik_certs:
+  database:
 
 networks:
   authentik_internal:

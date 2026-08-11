@@ -51,6 +51,10 @@ Le master installe également Authentik, Termix avec `guacd`, Uptime Kuma 2 et l
 hub Beszel ainsi que Homepage. Toutes les stacks sont placées sous `/opt/docker`
 et seul Caddy publie des ports sur l'hôte.
 
+Authentik utilise la version `2026.5.6` épinglée par le Compose officiel, sans
+Redis. Le tag flottant `latest` n'est volontairement pas utilisé afin d'éviter
+qu'une version incompatible soit conservée ou téléchargée.
+
 À la première installation, le résultat Semaphore affiche le mot de passe de
 `akadmin`. Il reste stocké pour root dans `/opt/docker/authentik/.env`.
 
