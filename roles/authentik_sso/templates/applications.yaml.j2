@@ -13,8 +13,8 @@ entries:
       invalidation_flow: !Find [authentik_flows.flow, [slug, default-provider-invalidation-flow]]
       client_type: confidential
       include_claims_in_id_token: true
-      client_id: "{{ portainer_oidc_client_id }}"
-      client_secret: "{{ portainer_oidc_client_secret }}"
+      client_id: !Env PORTAINER_OIDC_CLIENT_ID
+      client_secret: !Env PORTAINER_OIDC_CLIENT_SECRET
       redirect_uris:
         - matching_mode: strict
           url: "https://{{ portainer_domain }}/"
@@ -43,8 +43,8 @@ entries:
       invalidation_flow: !Find [authentik_flows.flow, [slug, default-provider-invalidation-flow]]
       client_type: confidential
       include_claims_in_id_token: true
-      client_id: "{{ semaphore_oidc_client_id }}"
-      client_secret: "{{ semaphore_oidc_client_secret }}"
+      client_id: !Env SEMAPHORE_OIDC_CLIENT_ID
+      client_secret: !Env SEMAPHORE_OIDC_CLIENT_SECRET
       redirect_uris:
         - matching_mode: strict
           url: "https://{{ semaphore_domain }}/api/auth/oidc/authentik/redirect"

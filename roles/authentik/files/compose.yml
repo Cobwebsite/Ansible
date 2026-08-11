@@ -51,6 +51,9 @@ services:
     environment:
       <<: *authentik-env
       AUTHENTIK_BOOTSTRAP_PASSWORD: ${AUTHENTIK_BOOTSTRAP_PASSWORD}
+    env_file:
+      - path: ./sso.env
+        required: false
     depends_on:
       postgresql:
         condition: service_healthy

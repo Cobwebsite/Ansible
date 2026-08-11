@@ -47,6 +47,7 @@
     } > /opt/docker/authentik/sso.env
   args:
     executable: /bin/bash
+  register: authentik_sso_secret_generation
   when: >-
     not authentik_sso_env.stat.exists or
     (authentik_sso_env_validation.rc | default(1)) != 0
@@ -103,15 +104,17 @@
     group: root
     mode: "0600"
   register: authentik_sso_blueprint
-  no_log: true
 
-- name: Redémarrer le worker pour charger le montage des Blueprints
+- name: Recréer le worker pour charger les secrets et les Blueprints
   community.docker.docker_compose_v2:
     project_src: /opt/docker/authentik
     files: [compose.yml]
     services: [authentik-worker]
-    state: restarted
-  when: authentik_sso_blueprint.changed
+    state: present
+    recreate: always
+  when: >-
+    authentik_sso_blueprint.changed or
+    (authentik_sso_secret_generation.changed | default(false))
 
 - name: Attendre que le worker Authentik soit de nouveau prêt
   community.docker.docker_container_info:
@@ -122,3 +125,38 @@
     - authentik_sso_worker_info.container.State.Health.Status == 'healthy'
   retries: 30
   delay: 10
+
+- name: Appliquer explicitement le Blueprint SSO
+  ansible.builtin.command:
+    argv:
+      - docker
+      - exec
+      - authentik-worker
+      - ak
+      - apply_blueprint
+      - /blueprints/custom/applications.yaml
+  register: authentik_sso_blueprint_apply
+  changed_when: authentik_sso_blueprint.changed
+
+- name: Compter les applications gérées dans Authentik
+  ansible.builtin.command:
+    argv:
+      - docker
+      - exec
+      - authentik-worker
+      - ak
+      - shell
+      - -c
+      - >-
+        from authentik.core.models import Application;
+        print(Application.objects.filter(slug__in=['portainer','semaphore','homepage']).count())
+  register: authentik_sso_application_count
+  changed_when: false
+
+- name: Vérifier la création des applications Authentik
+  ansible.builtin.assert:
+    that:
+      - authentik_sso_application_count.stdout_lines | last == '3'
+    fail_msg: >-
+      Authentik n'a pas créé les trois applications attendues : Portainer,
+      Semaphore et Homepage.
