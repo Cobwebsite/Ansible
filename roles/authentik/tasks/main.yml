@@ -1,16 +1,31 @@
 ---
-- name: Créer les répertoires Authentik
+- name: Créer le répertoire racine Authentik
   ansible.builtin.file:
-    path: "{{ item }}"
+    path: /opt/docker/authentik
     state: directory
     owner: root
     group: root
     mode: "0700"
+
+- name: Créer les répertoires accessibles au processus Authentik
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: "1000"
+    group: "1000"
+    mode: "0770"
   loop:
-    - /opt/docker/authentik
     - /opt/docker/authentik/data
-    - /opt/docker/authentik/certs
     - /opt/docker/authentik/custom-templates
+  register: authentik_storage_directories
+
+- name: Créer le répertoire des certificats Authentik
+  ansible.builtin.file:
+    path: /opt/docker/authentik/certs
+    state: directory
+    owner: root
+    group: root
+    mode: "0750"
 
 - name: Vérifier si les secrets Authentik existent
   ansible.builtin.stat:
@@ -44,6 +59,16 @@
     project_src: /opt/docker/authentik
     files: [compose.yml]
     state: present
+
+- name: Redémarrer Authentik après une correction des permissions
+  community.docker.docker_compose_v2:
+    project_src: /opt/docker/authentik
+    files: [compose.yml]
+    services:
+      - authentik-server
+      - authentik-worker
+    state: restarted
+  when: authentik_storage_directories.changed
 
 - name: Attendre que le worker Authentik soit prêt
   community.docker.docker_container_info:
