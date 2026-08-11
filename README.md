@@ -61,8 +61,8 @@ qu'une version incompatible soit conservée ou téléchargée.
 ### SSO Authentik
 
 Le playbook master automatise le SSO natif de Portainer et Semaphore. Le rôle
-`authentik_sso` génère une seule fois les identifiants OAuth/OIDC dans
-`/opt/docker/authentik/sso.env`, puis déploie un Blueprint sous
+Le rôle `authentik` génère une seule fois les identifiants OAuth/OIDC dans
+`/opt/docker/authentik/.env`, puis `authentik_sso` déploie un Blueprint sous
 `/opt/docker/authentik/blueprints`. Ce Blueprint crée et maintient les couples
 Application/Provider `portainer` et `semaphore` dans Authentik.
 
@@ -87,7 +87,7 @@ Le domaine public de l'Embedded Outpost est configuré automatiquement avec
 Les secrets restent lisibles uniquement par root :
 
 ```text
-/opt/docker/authentik/sso.env
+/opt/docker/authentik/.env
 /opt/docker/portainer/secrets/admin_password
 /opt/docker/semaphore/.env
 ```

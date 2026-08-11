@@ -10,63 +10,13 @@
       authentik_sso requiert authentik_domain, portainer_domain et
       semaphore_domain et homepage_domain.
 
-- name: Créer le répertoire des Blueprints personnalisés
-  ansible.builtin.file:
-    path: /opt/docker/authentik/blueprints
-    state: directory
-    owner: root
-    group: root
-    mode: "0700"
-
-- name: Vérifier si les secrets OIDC existent
-  ansible.builtin.stat:
-    path: /opt/docker/authentik/sso.env
-  register: authentik_sso_env
-
-- name: Vérifier le contenu du fichier de secrets OIDC
-  ansible.builtin.shell: |
-    set -o errexit
-    test "$(grep -cE '^(PORTAINER|SEMAPHORE)_OIDC_CLIENT_(ID|SECRET)=.+' /opt/docker/authentik/sso.env)" -eq 4
-  args:
-    executable: /bin/bash
-  register: authentik_sso_env_validation
-  changed_when: false
-  failed_when: false
-  when: authentik_sso_env.stat.exists
-  no_log: true
-
-- name: Générer les secrets OIDC une seule fois
-  ansible.builtin.shell: |
-    set -o errexit -o nounset
-    umask 077
-    {
-      printf 'PORTAINER_OIDC_CLIENT_ID=%s\n' "$(openssl rand -hex 24)"
-      printf 'PORTAINER_OIDC_CLIENT_SECRET=%s\n' "$(openssl rand -hex 48)"
-      printf 'SEMAPHORE_OIDC_CLIENT_ID=%s\n' "$(openssl rand -hex 24)"
-      printf 'SEMAPHORE_OIDC_CLIENT_SECRET=%s\n' "$(openssl rand -hex 48)"
-    } > /opt/docker/authentik/sso.env
-  args:
-    executable: /bin/bash
-  register: authentik_sso_secret_generation
-  when: >-
-    not authentik_sso_env.stat.exists or
-    (authentik_sso_env_validation.rc | default(1)) != 0
-  no_log: true
-
-- name: Protéger le fichier des secrets OIDC
-  ansible.builtin.file:
-    path: /opt/docker/authentik/sso.env
-    owner: root
-    group: root
-    mode: "0600"
-
 - name: Lire chaque secret OIDC
   ansible.builtin.command:
     argv:
       - awk
       - -F=
       - '$1 == ENVIRON["SSO_KEY"] { print substr($0, index($0, "=") + 1) }'
-      - /opt/docker/authentik/sso.env
+      - /opt/docker/authentik/.env
   environment:
     SSO_KEY: "{{ item }}"
   loop:
@@ -93,7 +43,7 @@
       - portainer_oidc_client_secret | length > 0
       - semaphore_oidc_client_id | length > 0
       - semaphore_oidc_client_secret | length > 0
-    fail_msg: Le fichier /opt/docker/authentik/sso.env est invalide.
+    fail_msg: Le fichier /opt/docker/authentik/.env ne contient pas les secrets OIDC attendus.
   no_log: true
 
 - name: Déployer les applications OIDC dans Authentik
@@ -105,26 +55,23 @@
     mode: "0600"
   register: authentik_sso_blueprint
 
-- name: Recréer le worker pour charger les secrets et les Blueprints
-  community.docker.docker_compose_v2:
-    project_src: /opt/docker/authentik
-    files: [compose.yml]
-    services: [authentik-worker]
-    state: present
-    recreate: always
-  when: >-
-    authentik_sso_blueprint.changed or
-    (authentik_sso_secret_generation.changed | default(false))
-
-- name: Attendre que le worker Authentik soit de nouveau prêt
-  community.docker.docker_container_info:
-    name: authentik-worker
-  register: authentik_sso_worker_info
-  until:
-    - authentik_sso_worker_info.exists
-    - authentik_sso_worker_info.container.State.Health.Status == 'healthy'
-  retries: 30
-  delay: 10
+- name: Attendre la fin des migrations de la base Authentik
+  ansible.builtin.command:
+    argv:
+      - docker
+      - exec
+      - authentik-worker
+      - ak
+      - shell
+      - -c
+      - >-
+        from authentik.tenants.models import Tenant;
+        print(Tenant.objects.filter(ready=True).count())
+  register: authentik_sso_database_ready
+  until: authentik_sso_database_ready.rc == 0
+  retries: 60
+  delay: 5
+  changed_when: false
 
 - name: Appliquer explicitement le Blueprint SSO
   ansible.builtin.command:

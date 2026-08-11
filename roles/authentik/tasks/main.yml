@@ -27,6 +27,14 @@
     group: root
     mode: "0750"
 
+- name: Créer le répertoire des Blueprints Authentik
+  ansible.builtin.file:
+    path: /opt/docker/authentik/blueprints
+    state: directory
+    owner: root
+    group: root
+    mode: "0700"
+
 - name: Vérifier si les secrets Authentik existent
   ansible.builtin.stat:
     path: /opt/docker/authentik/.env
@@ -39,8 +47,19 @@
     pg_pass="$(openssl rand -base64 36 | tr -d '\n')"
     secret_key="$(openssl rand -base64 60 | tr -d '\n')"
     bootstrap_password="$(openssl rand -base64 24 | tr -d '\n')"
-    printf 'PG_PASS=%s\nAUTHENTIK_SECRET_KEY=%s\nAUTHENTIK_BOOTSTRAP_PASSWORD=%s\n' \
-      "$pg_pass" "$secret_key" "$bootstrap_password" > /opt/docker/authentik/.env
+    portainer_client_id="$(openssl rand -hex 24)"
+    portainer_client_secret="$(openssl rand -hex 48)"
+    semaphore_client_id="$(openssl rand -hex 24)"
+    semaphore_client_secret="$(openssl rand -hex 48)"
+    {
+      printf 'PG_PASS=%s\n' "$pg_pass"
+      printf 'AUTHENTIK_SECRET_KEY=%s\n' "$secret_key"
+      printf 'AUTHENTIK_BOOTSTRAP_PASSWORD=%s\n' "$bootstrap_password"
+      printf 'PORTAINER_OIDC_CLIENT_ID=%s\n' "$portainer_client_id"
+      printf 'PORTAINER_OIDC_CLIENT_SECRET=%s\n' "$portainer_client_secret"
+      printf 'SEMAPHORE_OIDC_CLIENT_ID=%s\n' "$semaphore_client_id"
+      printf 'SEMAPHORE_OIDC_CLIENT_SECRET=%s\n' "$semaphore_client_secret"
+    } > /opt/docker/authentik/.env
   args:
     executable: /bin/bash
   when: not authentik_env.stat.exists
@@ -70,6 +89,16 @@
     state: restarted
   when: authentik_storage_directories.changed
 
+- name: Attendre que le serveur Authentik soit prêt
+  community.docker.docker_container_info:
+    name: authentik-server
+  register: authentik_server_info
+  until:
+    - authentik_server_info.exists
+    - authentik_server_info.container.State.Health.Status == 'healthy'
+  retries: 60
+  delay: 10
+
 - name: Attendre que le worker Authentik soit prêt
   community.docker.docker_container_info:
     name: authentik-worker
@@ -77,7 +106,7 @@
   until:
     - authentik_worker_info.exists
     - authentik_worker_info.container.State.Health.Status == 'healthy'
-  retries: 30
+  retries: 60
   delay: 10
 
 - name: Ajouter la route Authentik à Caddy
