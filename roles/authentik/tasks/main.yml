@@ -89,6 +89,9 @@
     mode: "0644"
   notify: Recharger Caddy
 
+- name: Appliquer immédiatement la route Authentik
+  ansible.builtin.meta: flush_handlers
+
 - name: Lire le mot de passe bootstrap Authentik lors de sa création
   ansible.builtin.shell: sed -n 's/^AUTHENTIK_BOOTSTRAP_PASSWORD=//p' /opt/docker/authentik/.env
   args:

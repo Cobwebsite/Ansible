@@ -1,7 +1,11 @@
 {{ domain }} {
     import common
+{% if not (portainer_oidc_enabled | default(false) | bool) %}
     route {
         import authentik
         reverse_proxy portainer:9000
     }
+{% else %}
+    reverse_proxy portainer:9000
+{% endif %}
 }

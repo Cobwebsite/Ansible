@@ -26,9 +26,27 @@
   when: not semaphore_env.stat.exists
   no_log: true
 
+- name: Lire les secrets SSO Authentik pour Semaphore
+  ansible.builtin.slurp:
+    src: /opt/docker/authentik/sso.env
+  register: semaphore_sso_secrets_file
+  when: semaphore_oidc_enabled | default(false) | bool
+  no_log: true
+
+- name: Préparer la configuration OIDC Semaphore
+  ansible.builtin.set_fact:
+    semaphore_oidc_client_id: >-
+      {{ (semaphore_sso_secrets_file.content | b64decode |
+          regex_search('(?m)^SEMAPHORE_OIDC_CLIENT_ID=(.+)$', '\\1'))[0] }}
+    semaphore_oidc_client_secret: >-
+      {{ (semaphore_sso_secrets_file.content | b64decode |
+          regex_search('(?m)^SEMAPHORE_OIDC_CLIENT_SECRET=(.+)$', '\\1'))[0] }}
+  when: semaphore_oidc_enabled | default(false) | bool
+  no_log: true
+
 - name: Installer la stack Semaphore sans port public
-  ansible.builtin.copy:
-    src: compose.yml
+  ansible.builtin.template:
+    src: compose.yml.j2
     dest: /opt/docker/semaphore/compose.yml
     owner: root
     group: root
@@ -38,8 +56,7 @@
 - name: Démarrer Semaphore
   community.docker.docker_compose_v2:
     project_src: /opt/docker/semaphore
-    files:
-      - compose.yml
+    files: [compose.yml]
     state: present
 
 - name: Ajouter la route Semaphore à Caddy
@@ -52,8 +69,7 @@
   notify: Recharger Caddy
 
 - name: Lire le mot de passe administrateur lors de sa création
-  ansible.builtin.shell: >-
-    sed -n 's/^SEMAPHORE_ADMIN_PASSWORD=//p' /opt/docker/semaphore/.env
+  ansible.builtin.shell: sed -n 's/^SEMAPHORE_ADMIN_PASSWORD=//p' /opt/docker/semaphore/.env
   args:
     executable: /bin/bash
   register: semaphore_admin_password
@@ -63,5 +79,5 @@
 
 - name: Afficher les identifiants Semaphore générés
   ansible.builtin.debug:
-    msg: "Semaphore: utilisateur admin, mot de passe {{ semaphore_admin_password.stdout }}"
+    msg: "Semaphore : utilisateur admin, mot de passe {{ semaphore_admin_password.stdout }}"
   when: not semaphore_env.stat.exists

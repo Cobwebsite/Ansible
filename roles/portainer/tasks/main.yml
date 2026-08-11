@@ -5,23 +5,178 @@
     state: directory
     owner: root
     group: root
-    mode: "0755"
+    mode: "0700"
+
+- name: Créer le répertoire des secrets Portainer
+  ansible.builtin.file:
+    path: /opt/docker/portainer/secrets
+    state: directory
+    owner: root
+    group: root
+    mode: "0700"
+
+- name: Vérifier si le mot de passe administrateur Portainer existe
+  ansible.builtin.stat:
+    path: /opt/docker/portainer/secrets/admin_password
+  register: portainer_admin_password_file
+
+- name: Générer le mot de passe administrateur Portainer une seule fois
+  ansible.builtin.shell: |
+    set -o errexit -o nounset
+    umask 077
+    openssl rand -base64 30 | tr -d '\n' > /opt/docker/portainer/secrets/admin_password
+  args:
+    executable: /bin/bash
+  when: not portainer_admin_password_file.stat.exists
+  no_log: true
 
 - name: Installer la stack Portainer sans port public
-  ansible.builtin.copy:
-    src: compose.yml
+  ansible.builtin.template:
+    src: compose.yml.j2
     dest: /opt/docker/portainer/compose.yml
     owner: root
     group: root
-    mode: "0644"
+    mode: "0600"
   notify: Redémarrer Portainer
 
 - name: Démarrer Portainer
   community.docker.docker_compose_v2:
     project_src: /opt/docker/portainer
-    files:
-      - compose.yml
+    files: [compose.yml]
     state: present
+
+- name: Attendre que l'API Portainer soit prête
+  ansible.builtin.command:
+    argv: [docker, run, --rm, --network, proxy, curlimages/curl:8.16.0, --fail, --silent, --show-error, http://portainer:9000/api/status]
+  register: portainer_api_status
+  until: portainer_api_status.rc == 0
+  retries: 30
+  delay: 5
+  changed_when: false
+
+- name: Lire le mot de passe administrateur Portainer
+  ansible.builtin.slurp:
+    src: /opt/docker/portainer/secrets/admin_password
+  register: portainer_admin_password_secret
+  no_log: true
+
+- name: Lire les secrets SSO Authentik pour Portainer
+  ansible.builtin.slurp:
+    src: /opt/docker/authentik/sso.env
+  register: portainer_sso_secrets_file
+  when: portainer_oidc_enabled | default(false) | bool
+  no_log: true
+
+- name: Préparer la configuration OIDC Portainer
+  ansible.builtin.set_fact:
+    portainer_admin_password: "{{ portainer_admin_password_secret.content | b64decode }}"
+    portainer_oidc_client_id: >-
+      {{ (portainer_sso_secrets_file.content | b64decode |
+          regex_search('(?m)^PORTAINER_OIDC_CLIENT_ID=(.+)$', '\\1'))[0] }}
+    portainer_oidc_client_secret: >-
+      {{ (portainer_sso_secrets_file.content | b64decode |
+          regex_search('(?m)^PORTAINER_OIDC_CLIENT_SECRET=(.+)$', '\\1'))[0] }}
+  when: portainer_oidc_enabled | default(false) | bool
+  no_log: true
+
+- name: Obtenir un jeton temporaire de l'API Portainer
+  ansible.builtin.command:
+    argv:
+      - docker
+      - run
+      - --rm
+      - --network
+      - proxy
+      - curlimages/curl:8.16.0
+      - --fail
+      - --silent
+      - --show-error
+      - --header
+      - "Content-Type: application/json"
+      - --data
+      - "{{ {'Username': 'admin', 'Password': portainer_admin_password} | to_json }}"
+      - http://portainer:9000/api/auth
+  register: portainer_auth_response
+  when: portainer_oidc_enabled | default(false) | bool
+  changed_when: false
+  no_log: true
+
+- name: Lire la configuration actuelle de Portainer
+  ansible.builtin.command:
+    argv:
+      - docker
+      - run
+      - --rm
+      - --network
+      - proxy
+      - curlimages/curl:8.16.0
+      - --fail
+      - --silent
+      - --show-error
+      - --header
+      - "Authorization: Bearer {{ (portainer_auth_response.stdout | from_json).jwt }}"
+      - http://portainer:9000/api/settings
+  register: portainer_settings_response
+  when: portainer_oidc_enabled | default(false) | bool
+  changed_when: false
+  no_log: true
+
+- name: Déterminer si la configuration OIDC Portainer doit être mise à jour
+  ansible.builtin.set_fact:
+    portainer_oauth_needs_update: >-
+      {{
+        (portainer_settings_response.stdout | from_json).AuthenticationMethod != 3 or
+        (portainer_settings_response.stdout | from_json).OAuthSettings.ClientID != portainer_oidc_client_id or
+        (portainer_settings_response.stdout | from_json).OAuthSettings.RedirectURI != 'https://' ~ domain ~ '/' or
+        not (portainer_settings_response.stdout | from_json).OAuthSettings.OAuthAutoCreateUsers or
+        not (portainer_settings_response.stdout | from_json).OAuthSettings.SSO
+      }}
+  when: portainer_oidc_enabled | default(false) | bool
+  no_log: true
+
+- name: Activer OAuth Authentik dans Portainer
+  ansible.builtin.command:
+    argv:
+      - docker
+      - run
+      - --rm
+      - --network
+      - proxy
+      - curlimages/curl:8.16.0
+      - --fail
+      - --silent
+      - --show-error
+      - --request
+      - PUT
+      - --header
+      - "Content-Type: application/json"
+      - --header
+      - "Authorization: Bearer {{ (portainer_auth_response.stdout | from_json).jwt }}"
+      - --data
+      - >-
+        {{ {
+          'AuthenticationMethod': 3,
+          'OAuthSettings': {
+            'ClientID': portainer_oidc_client_id,
+            'ClientSecret': portainer_oidc_client_secret,
+            'AccessTokenURI': 'https://' ~ authentik_domain ~ '/application/o/token/',
+            'AuthorizationURI': 'https://' ~ authentik_domain ~ '/application/o/authorize/',
+            'ResourceURI': 'https://' ~ authentik_domain ~ '/application/o/userinfo/',
+            'RedirectURI': 'https://' ~ domain ~ '/',
+            'LogoutURI': 'https://' ~ authentik_domain ~ '/application/o/portainer/end-session/',
+            'UserIdentifier': 'preferred_username',
+            'Scopes': 'openid profile email',
+            'OAuthAutoCreateUsers': true,
+            'DefaultTeamID': 0,
+            'SSO': true,
+            'AuthStyle': 0
+          }
+        } | to_json }}
+      - http://portainer:9000/api/settings
+  when:
+    - portainer_oidc_enabled | default(false) | bool
+    - portainer_oauth_needs_update | bool
+  no_log: true
 
 - name: Ajouter la route Portainer à Caddy
   ansible.builtin.template:
@@ -31,3 +186,10 @@
     group: root
     mode: "0644"
   notify: Recharger Caddy
+
+- name: Afficher les identifiants Portainer générés
+  ansible.builtin.debug:
+    msg: >-
+      Portainer : utilisateur de secours admin, mot de passe
+      {{ portainer_admin_password_secret.content | b64decode }}
+  when: not portainer_admin_password_file.stat.exists

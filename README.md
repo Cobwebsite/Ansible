@@ -58,23 +58,38 @@ qu'une version incompatible soit conservée ou téléchargée.
 À la première installation, le résultat Semaphore affiche le mot de passe de
 `akadmin`. Il reste stocké pour root dans `/opt/docker/authentik/.env`.
 
-### Activer Authentik pour Portainer, Semaphore et Homepage
+### SSO Authentik
 
-Les routes Caddy de Portainer, Semaphore et Homepage utilisent le snippet
-`authentik`. Dans Authentik, créer pour chacun :
+Le playbook master automatise le SSO natif de Portainer et Semaphore. Le rôle
+`authentik_sso` génère une seule fois les identifiants OAuth/OIDC dans
+`/opt/docker/authentik/sso.env`, puis déploie un Blueprint sous
+`/opt/docker/authentik/blueprints`. Ce Blueprint crée et maintient les couples
+Application/Provider `portainer` et `semaphore` dans Authentik.
 
-1. un Proxy Provider en mode forward auth avec l'URL externe complète ;
-2. une Application associée à ce provider ;
-3. l'association du provider à l'Embedded Outpost.
+Portainer est initialisé avec un compte local `admin` dont le mot de passe est
+généré et affiché à la première exécution. Ansible utilise ce compte uniquement
+sur le réseau Docker privé pour activer OAuth via l'API Portainer. Il reste
+ensuite disponible comme accès de secours. Les utilisateurs Authentik sont créés
+automatiquement dans Portainer lors de leur première connexion.
 
-Utiliser respectivement `https://portainer.example.com`,
-`https://semaphore.example.com` et `https://home.example.com` comme external
-host. L'URL
-`/outpost.goauthentik.io/*` reste accessible sans authentification, comme requis
-par Authentik. En cas de problème, tester par exemple :
+Semaphore reçoit sa configuration OIDC dans son Compose. Les nouveaux comptes
+OIDC Semaphore n'ont volontairement aucun droit par défaut : utiliser le compte
+local `admin` affiché lors de l'installation pour leur attribuer les permissions.
 
-```bash
-curl -I https://portainer.example.com/outpost.goauthentik.io/ping
+Les routes Caddy de Portainer et Semaphore n'utilisent plus `forward_auth` dans
+le master, car chacune de ces applications gère directement sa session OIDC.
+Homepage reste protégé par le snippet Caddy `authentik`. Son Proxy Provider et
+son association à l'Embedded Outpost sont également créés par le Blueprint ;
+aucune création d'application n'est nécessaire dans l'interface Authentik.
+Le domaine public de l'Embedded Outpost est configuré automatiquement avec
+`https://{{ authentik_domain }}/`.
+
+Les secrets restent lisibles uniquement par root :
+
+```text
+/opt/docker/authentik/sso.env
+/opt/docker/portainer/secrets/admin_password
+/opt/docker/semaphore/.env
 ```
 
 Le hub Beszel est installé sans agent. Après la création du compte administrateur,

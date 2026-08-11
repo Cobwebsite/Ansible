@@ -36,12 +36,15 @@
     - role: authentik
       vars:
         domain: "{{ authentik_domain }}"
+    - role: authentik_sso
     - role: portainer
       vars:
         domain: "{{ portainer_domain }}"
+        portainer_oidc_enabled: true
     - role: semaphore
       vars:
         domain: "{{ semaphore_domain }}"
+        semaphore_oidc_enabled: true
     - role: termix
       vars:
         domain: "{{ termix_domain }}"

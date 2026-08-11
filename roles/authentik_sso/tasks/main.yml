@@ -1,0 +1,98 @@
+---
+- name: Valider les variables du SSO Authentik
+  ansible.builtin.assert:
+    that:
+      - authentik_domain is defined
+      - portainer_domain is defined
+      - semaphore_domain is defined
+      - homepage_domain is defined
+    fail_msg: >-
+      authentik_sso requiert authentik_domain, portainer_domain et
+      semaphore_domain et homepage_domain.
+
+- name: Créer le répertoire des Blueprints personnalisés
+  ansible.builtin.file:
+    path: /opt/docker/authentik/blueprints
+    state: directory
+    owner: root
+    group: root
+    mode: "0700"
+
+- name: Vérifier si les secrets OIDC existent
+  ansible.builtin.stat:
+    path: /opt/docker/authentik/sso.env
+  register: authentik_sso_env
+
+- name: Générer les secrets OIDC une seule fois
+  ansible.builtin.shell: |
+    set -o errexit -o nounset
+    umask 077
+    printf 'PORTAINER_OIDC_CLIENT_ID=%s\n' "$(openssl rand -hex 24)"
+    printf 'PORTAINER_OIDC_CLIENT_SECRET=%s\n' "$(openssl rand -hex 48)"
+    printf 'SEMAPHORE_OIDC_CLIENT_ID=%s\n' "$(openssl rand -hex 24)"
+    printf 'SEMAPHORE_OIDC_CLIENT_SECRET=%s\n' "$(openssl rand -hex 48)"
+  args:
+    executable: /bin/bash
+  register: authentik_sso_generated_secrets
+  when: not authentik_sso_env.stat.exists
+  no_log: true
+
+- name: Enregistrer les secrets OIDC générés
+  ansible.builtin.copy:
+    content: "{{ authentik_sso_generated_secrets.stdout }}\n"
+    dest: /opt/docker/authentik/sso.env
+    owner: root
+    group: root
+    mode: "0600"
+  when: not authentik_sso_env.stat.exists
+  no_log: true
+
+- name: Lire les secrets OIDC
+  ansible.builtin.slurp:
+    src: /opt/docker/authentik/sso.env
+  register: authentik_sso_secrets_file
+  no_log: true
+
+- name: Préparer les secrets OIDC pour les templates
+  ansible.builtin.set_fact:
+    portainer_oidc_client_id: >-
+      {{ (authentik_sso_secrets_file.content | b64decode |
+          regex_search('(?m)^PORTAINER_OIDC_CLIENT_ID=(.+)$', '\\1'))[0] }}
+    portainer_oidc_client_secret: >-
+      {{ (authentik_sso_secrets_file.content | b64decode |
+          regex_search('(?m)^PORTAINER_OIDC_CLIENT_SECRET=(.+)$', '\\1'))[0] }}
+    semaphore_oidc_client_id: >-
+      {{ (authentik_sso_secrets_file.content | b64decode |
+          regex_search('(?m)^SEMAPHORE_OIDC_CLIENT_ID=(.+)$', '\\1'))[0] }}
+    semaphore_oidc_client_secret: >-
+      {{ (authentik_sso_secrets_file.content | b64decode |
+          regex_search('(?m)^SEMAPHORE_OIDC_CLIENT_SECRET=(.+)$', '\\1'))[0] }}
+  no_log: true
+
+- name: Déployer les applications OIDC dans Authentik
+  ansible.builtin.template:
+    src: applications.yaml.j2
+    dest: /opt/docker/authentik/blueprints/applications.yaml
+    owner: root
+    group: root
+    mode: "0600"
+  register: authentik_sso_blueprint
+  no_log: true
+
+- name: Redémarrer le worker pour charger le montage des Blueprints
+  community.docker.docker_compose_v2:
+    project_src: /opt/docker/authentik
+    files: [compose.yml]
+    services: [authentik-worker]
+    state: restarted
+  when: authentik_sso_blueprint.changed
+
+- name: Attendre que le worker Authentik soit de nouveau prêt
+  community.docker.docker_container_info:
+    name: authentik-worker
+  register: authentik_sso_worker_info
+  until:
+    - authentik_sso_worker_info.exists
+    - authentik_sso_worker_info.container.State.Health.Status == 'healthy'
+  retries: 30
+  delay: 10

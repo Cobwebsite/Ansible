@@ -60,6 +60,7 @@ services:
       - ./data:/data
       - ./certs:/certs
       - ./custom-templates:/templates
+      - ./blueprints:/blueprints/custom
     networks:
       - authentik_internal
       - proxy

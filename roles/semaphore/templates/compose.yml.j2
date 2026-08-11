@@ -9,8 +9,7 @@ services:
       POSTGRES_PASSWORD: ${SEMAPHORE_DB_PASSWORD}
     volumes:
       - semaphore_database:/var/lib/postgresql/data
-    networks:
-      - semaphore_internal
+    networks: [semaphore_internal]
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U semaphore -d semaphore"]
       interval: 10s
@@ -36,6 +35,11 @@ services:
       SEMAPHORE_ADMIN_EMAIL: admin@localhost
       SEMAPHORE_ADMIN_PASSWORD: ${SEMAPHORE_ADMIN_PASSWORD}
       SEMAPHORE_ACCESS_KEY_ENCRYPTION: ${SEMAPHORE_ACCESS_KEY_ENCRYPTION}
+{% if semaphore_oidc_enabled | default(false) | bool %}
+      SEMAPHORE_WEB_ROOT: /
+      SEMAPHORE_OIDC_PROVIDERS: >-
+        {"authentik":{"display_name":"Connexion avec Authentik","provider_url":"https://{{ authentik_domain }}/application/o/semaphore/","client_id":"{{ semaphore_oidc_client_id }}","client_secret":"{{ semaphore_oidc_client_secret }}","redirect_url":"https://{{ domain }}/api/auth/oidc/authentik/redirect/","username_claim":"preferred_username","name_claim":"name","email_claim":"email","scopes":["openid","profile","email"]}}
+{% endif %}
     networks:
       - semaphore_internal
       - proxy
