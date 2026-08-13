@@ -111,3 +111,124 @@
     fail_msg: >-
       Authentik n'a pas créé les six applications attendues : Portainer,
       Semaphore, Homepage, Beszel, Uptime Kuma et Termix.
+
+- name: Vérifier le groupe SSO Authentik
+  ansible.builtin.command:
+    argv:
+      - docker
+      - exec
+      - authentik-worker
+      - ak
+      - shell
+      - -c
+      - >-
+        from authentik.core.models import Group;
+        print(
+          Group.objects.filter(
+            name='homelab-users',
+            is_superuser=False
+          ).count()
+        )
+  register: authentik_sso_group_count
+  changed_when: false
+
+- name: Valider le groupe SSO Authentik
+  ansible.builtin.assert:
+    that:
+      - authentik_sso_group_count.stdout_lines | last == '1'
+    fail_msg: Le groupe homelab-users n'a pas été créé correctement.
+
+- name: Vérifier les bindings du groupe sur les applications SSO
+  ansible.builtin.command:
+    argv:
+      - docker
+      - exec
+      - authentik-worker
+      - ak
+      - shell
+      - -c
+      - >-
+        from authentik.core.models import Application, Group;
+        from authentik.policies.models import PolicyBinding;
+        slugs = [
+          'portainer',
+          'semaphore',
+          'homepage',
+          'beszel',
+          'uptime-kuma',
+          'termix'
+        ];
+        group = Group.objects.get(name='homelab-users');
+        apps = Application.objects.filter(slug__in=slugs);
+        print(
+          sum(
+            PolicyBinding.objects.filter(
+              target=app,
+              group=group
+            ).exists()
+            for app in apps
+          )
+        )
+  register: authentik_sso_binding_count
+  changed_when: false
+
+- name: Valider les bindings des applications SSO
+  ansible.builtin.assert:
+    that:
+      - authentik_sso_binding_count.stdout_lines | last == '6'
+    fail_msg: >-
+      Toutes les applications SSO ne sont pas liées au groupe homelab-users.
+
+- name: Vérifier la configuration WebAuthn du flux d'authentification
+  ansible.builtin.command:
+    argv:
+      - docker
+      - exec
+      - authentik-worker
+      - ak
+      - shell
+      - -c
+      - >-
+        from authentik.stages.identification.models import IdentificationStage;
+        stage = IdentificationStage.objects.get(
+          name='default-authentication-identification'
+        );
+        value = stage.webauthn_authenticator_validation_stage;
+        print(value.name if value else '')
+  register: authentik_sso_webauthn_stage
+  changed_when: false
+
+- name: Valider la configuration WebAuthn
+  ansible.builtin.assert:
+    that:
+      - >-
+        authentik_sso_webauthn_stage.stdout_lines | last ==
+        'default-authentication-mfa-validation'
+    fail_msg: >-
+      Le stage default-authentication-identification n'utilise pas
+      default-authentication-mfa-validation pour WebAuthn.
+
+- name: Vérifier la durée de session Authentik
+  ansible.builtin.command:
+    argv:
+      - docker
+      - exec
+      - authentik-worker
+      - ak
+      - shell
+      - -c
+      - >-
+        from authentik.stages.user_login.models import UserLoginStage;
+        stage = UserLoginStage.objects.get(
+          name='default-authentication-login'
+        );
+        print(stage.session_duration.total_seconds())
+  register: authentik_sso_session_duration
+  changed_when: false
+
+- name: Valider la durée de session Authentik
+  ansible.builtin.assert:
+    that:
+      - authentik_sso_session_duration.stdout_lines | last | int == 2592000
+    fail_msg: >-
+      La durée de session Authentik n'est pas configurée à 30 jours.
