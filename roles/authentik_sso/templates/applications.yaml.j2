@@ -203,6 +203,9 @@ entries:
     identifiers:
       name: default-authentication-identification
     attrs:
+      user_fields:
+        - username
+        - email
       webauthn_authenticator_validation_stage: !Find
         - authentik_stages_authenticator_validate.authenticatorvalidatestage
         - [name, default-authentication-mfa-validation]
