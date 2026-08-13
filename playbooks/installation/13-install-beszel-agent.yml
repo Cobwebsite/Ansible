@@ -1,0 +1,7 @@
+---
+- name: Installer l'agent Beszel
+  hosts: "{{ target | default('all') }}"
+  become: true
+  roles:
+    - role: beszel_agent
+

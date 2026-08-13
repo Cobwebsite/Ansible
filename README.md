@@ -78,11 +78,24 @@ local `admin` affiché lors de l'installation pour leur attribuer les permission
 
 Les routes Caddy de Portainer et Semaphore n'utilisent plus `forward_auth` dans
 le master, car chacune de ces applications gère directement sa session OIDC.
-Homepage reste protégé par le snippet Caddy `authentik`. Son Proxy Provider et
-son association à l'Embedded Outpost sont également créés par le Blueprint ;
-aucune création d'application n'est nécessaire dans l'interface Authentik.
+Homepage, Uptime Kuma et Termix sont protégés par le snippet Caddy `authentik`.
+Beszel utilise également `forward_auth`, puis connecte automatiquement
+l'utilisateur à partir de l'en-tête vérifié `X-Authentik-Email`. Ses variables
+`TRUSTED_AUTH_HEADER` et `USER_CREATION` sont configurées par le master.
+
+Les providers OIDC Portainer et Semaphore déclarent explicitement les flux
+`authorization_code` et `refresh_token`, requis pour les providers créés avec
+Authentik 2026.5.
+
+Les Proxy Providers Homepage, Beszel, Uptime Kuma et Termix ainsi que leur
+association à l'Embedded Outpost sont créés par le Blueprint. Aucune création
+d'application n'est nécessaire dans l'interface Authentik.
 Le domaine public de l'Embedded Outpost est configuré automatiquement avec
 `https://{{ authentik_domain }}/`.
+
+La protection couvre actuellement toute l'instance Uptime Kuma, y compris ses
+pages de statut. Si une page doit devenir publique, il faudra ajouter des
+exceptions Caddy ciblées pour son slug et les API publiques correspondantes.
 
 Les secrets restent lisibles uniquement par root :
 
@@ -92,8 +105,21 @@ Les secrets restent lisibles uniquement par root :
 /opt/docker/semaphore/.env
 ```
 
-Le hub Beszel est installé sans agent. Après la création du compte administrateur,
-ajouter les agents depuis son interface afin d'obtenir leur `KEY` et leur `TOKEN`.
+Le hub et le rôle d'agent Beszel sont disponibles. L'installation initiale du
+master peut s'exécuter sans identifiants d'agent. Dans Beszel, ouvrir
+`Settings > Tokens`, créer/copier un token universel, puis relever la clé
+publique affichée lors de l'ajout d'un système. Relancer ensuite le master avec :
+
+```yaml
+beszel_agent_key: "ssh-ed25519 AAAA..."
+beszel_agent_token: "token universel secret"
+```
+
+Le token universel permet à Beszel de créer automatiquement le système lors
+de la première connexion. La route WebSocket
+`/api/beszel/agent-connect` contourne uniquement la session web Authentik ; elle
+reste authentifiée par le token et la signature cryptographique Beszel. Aucun
+port de l'agent n'est publié : il initie lui-même la connexion vers le hub.
 
 Homepage est protégé par Authentik dans le setup master. Sa configuration se
 trouve dans `/opt/docker/homepage/config` et contient les liens vers les services
@@ -110,6 +136,9 @@ seule tâche, utiliser `playbooks/installation/10-install-slave.yml` :
 
 ```yaml
 portainer_agent_domain: agent.example.com
+beszel_hub_url: https://monitoring.example.com
+beszel_agent_key: "ssh-ed25519 AAAA..."
+beszel_agent_token: "token universel secret"
 ```
 
 Le port `9001` de l'Agent n'est pas publié sur l'hôte. Caddy est le seul point
@@ -122,6 +151,10 @@ même valeur au template slave dans la variable secrète
 
 Le composant seul peut être installé avec
 `playbooks/installation/06-install-portainer-agent.yml` et la variable `domain`.
+L'agent Beszel seul peut être installé avec
+`playbooks/installation/13-install-beszel-agent.yml`. Conserver le token dans
+une variable secrète Semaphore ; il est écrit sur le serveur dans
+`/opt/docker/beszel-agent/.env` avec le mode `0600`.
 
 Les playbooks ciblent par défaut tous les hôtes de l'inventaire. Pour employer
 un groupe ou un hôte précis, définir `target` dans les variables du template

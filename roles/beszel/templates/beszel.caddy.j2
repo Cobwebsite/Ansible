@@ -1,5 +1,17 @@
 {{ domain }} {
     import common
-    reverse_proxy beszel:8090
-}
+{% if beszel_authentik_enabled | default(false) | bool %}
+    # L'agent s'authentifie lui-même auprès de Beszel par token et signature.
+    # Cette seule route doit rester accessible sans session navigateur Authentik.
+    handle /api/beszel/agent-connect {
+        reverse_proxy beszel:8090
+    }
 
+    route {
+        import authentik
+        reverse_proxy beszel:8090
+    }
+{% else %}
+    reverse_proxy beszel:8090
+{% endif %}
+}

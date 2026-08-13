@@ -6,9 +6,13 @@
       - portainer_domain is defined
       - semaphore_domain is defined
       - homepage_domain is defined
+      - beszel_domain is defined
+      - uptime_kuma_domain is defined
+      - termix_domain is defined
     fail_msg: >-
       authentik_sso requiert authentik_domain, portainer_domain et
-      semaphore_domain et homepage_domain.
+      semaphore_domain, homepage_domain, beszel_domain, uptime_kuma_domain et
+      termix_domain.
 
 - name: Lire chaque secret OIDC
   ansible.builtin.command:
@@ -96,14 +100,14 @@
       - -c
       - >-
         from authentik.core.models import Application;
-        print(Application.objects.filter(slug__in=['portainer','semaphore','homepage']).count())
+        print(Application.objects.filter(slug__in=['portainer','semaphore','homepage','beszel','uptime-kuma','termix']).count())
   register: authentik_sso_application_count
   changed_when: false
 
 - name: Vérifier la création des applications Authentik
   ansible.builtin.assert:
     that:
-      - authentik_sso_application_count.stdout_lines | last == '3'
+      - authentik_sso_application_count.stdout_lines | last == '6'
     fail_msg: >-
-      Authentik n'a pas créé les trois applications attendues : Portainer,
-      Semaphore et Homepage.
+      Authentik n'a pas créé les six applications attendues : Portainer,
+      Semaphore, Homepage, Beszel, Uptime Kuma et Termix.

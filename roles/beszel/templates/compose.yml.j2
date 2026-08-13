@@ -5,6 +5,10 @@ services:
     restart: unless-stopped
     environment:
       APP_URL: "https://{{ domain }}"
+{% if beszel_authentik_enabled | default(false) | bool %}
+      TRUSTED_AUTH_HEADER: X-Authentik-Email
+      USER_CREATION: "true"
+{% endif %}
     volumes:
       - beszel_data:/beszel_data
       - beszel_socket:/beszel_socket
@@ -19,4 +23,3 @@ networks:
   proxy:
     external: true
     name: proxy
-

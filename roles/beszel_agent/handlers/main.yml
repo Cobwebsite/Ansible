@@ -1,0 +1,7 @@
+---
+- name: Redémarrer l'agent Beszel
+  community.docker.docker_compose_v2:
+    project_src: /opt/docker/beszel-agent
+    files: [compose.yml]
+    state: restarted
+

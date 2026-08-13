@@ -12,6 +12,9 @@ entries:
       authorization_flow: !Find [authentik_flows.flow, [slug, default-provider-authorization-implicit-consent]]
       invalidation_flow: !Find [authentik_flows.flow, [slug, default-provider-invalidation-flow]]
       client_type: confidential
+      grant_types:
+        - authorization_code
+        - refresh_token
       include_claims_in_id_token: true
       client_id: !Env PORTAINER_OIDC_CLIENT_ID
       client_secret: !Env PORTAINER_OIDC_CLIENT_SECRET
@@ -33,6 +36,69 @@ entries:
       meta_launch_url: "https://{{ portainer_domain }}/"
       policy_engine_mode: any
 
+  - model: authentik_providers_proxy.proxyprovider
+    id: beszel-provider
+    state: present
+    identifiers:
+      name: Beszel
+    attrs:
+      authorization_flow: !Find [authentik_flows.flow, [slug, default-provider-authorization-implicit-consent]]
+      invalidation_flow: !Find [authentik_flows.flow, [slug, default-provider-invalidation-flow]]
+      mode: forward_single
+      external_host: "https://{{ beszel_domain }}"
+
+  - model: authentik_core.application
+    state: present
+    identifiers:
+      slug: beszel
+    attrs:
+      name: Beszel
+      provider: !KeyOf beszel-provider
+      meta_launch_url: "https://{{ beszel_domain }}/"
+      policy_engine_mode: any
+
+  - model: authentik_providers_proxy.proxyprovider
+    id: uptime-kuma-provider
+    state: present
+    identifiers:
+      name: Uptime Kuma
+    attrs:
+      authorization_flow: !Find [authentik_flows.flow, [slug, default-provider-authorization-implicit-consent]]
+      invalidation_flow: !Find [authentik_flows.flow, [slug, default-provider-invalidation-flow]]
+      mode: forward_single
+      external_host: "https://{{ uptime_kuma_domain }}"
+
+  - model: authentik_core.application
+    state: present
+    identifiers:
+      slug: uptime-kuma
+    attrs:
+      name: Uptime Kuma
+      provider: !KeyOf uptime-kuma-provider
+      meta_launch_url: "https://{{ uptime_kuma_domain }}/"
+      policy_engine_mode: any
+
+  - model: authentik_providers_proxy.proxyprovider
+    id: termix-provider
+    state: present
+    identifiers:
+      name: Termix
+    attrs:
+      authorization_flow: !Find [authentik_flows.flow, [slug, default-provider-authorization-implicit-consent]]
+      invalidation_flow: !Find [authentik_flows.flow, [slug, default-provider-invalidation-flow]]
+      mode: forward_single
+      external_host: "https://{{ termix_domain }}"
+
+  - model: authentik_core.application
+    state: present
+    identifiers:
+      slug: termix
+    attrs:
+      name: Termix
+      provider: !KeyOf termix-provider
+      meta_launch_url: "https://{{ termix_domain }}/"
+      policy_engine_mode: any
+
   - model: authentik_providers_oauth2.oauth2provider
     id: semaphore-provider
     state: present
@@ -42,6 +108,9 @@ entries:
       authorization_flow: !Find [authentik_flows.flow, [slug, default-provider-authorization-implicit-consent]]
       invalidation_flow: !Find [authentik_flows.flow, [slug, default-provider-invalidation-flow]]
       client_type: confidential
+      grant_types:
+        - authorization_code
+        - refresh_token
       include_claims_in_id_token: true
       client_id: !Env SEMAPHORE_OIDC_CLIENT_ID
       client_secret: !Env SEMAPHORE_OIDC_CLIENT_SECRET
@@ -96,3 +165,6 @@ entries:
         authentik_host_browser: "https://{{ authentik_domain }}/"
       providers:
         - !KeyOf homepage-provider
+        - !KeyOf beszel-provider
+        - !KeyOf uptime-kuma-provider
+        - !KeyOf termix-provider

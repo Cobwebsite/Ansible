@@ -1,4 +1,11 @@
 {{ domain }} {
     import common
+{% if termix_authentik_enabled | default(false) | bool %}
+    route {
+        import authentik
+        reverse_proxy termix:8080
+    }
+{% else %}
     reverse_proxy termix:8080
+{% endif %}
 }

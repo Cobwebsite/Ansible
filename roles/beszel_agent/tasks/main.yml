@@ -1,0 +1,47 @@
+---
+- name: Valider la configuration de l'agent Beszel
+  ansible.builtin.assert:
+    that:
+      - beszel_agent_key is defined
+      - beszel_agent_key | length > 0
+      - beszel_agent_token is defined
+      - beszel_agent_token | length > 0
+      - beszel_hub_url is defined
+      - beszel_hub_url is match('^https://[^/]+/?$')
+    fail_msg: >-
+      Fournissez beszel_agent_key, beszel_agent_token et beszel_hub_url
+      (par exemple https://beszel.example.com) dans Semaphore.
+
+- name: Créer le répertoire de l'agent Beszel
+  ansible.builtin.file:
+    path: /opt/docker/beszel-agent
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Installer les secrets de l'agent Beszel
+  ansible.builtin.template:
+    src: agent.env.j2
+    dest: /opt/docker/beszel-agent/.env
+    owner: root
+    group: root
+    mode: "0600"
+  no_log: true
+  notify: Redémarrer l'agent Beszel
+
+- name: Installer la stack de l'agent Beszel
+  ansible.builtin.template:
+    src: compose.yml.j2
+    dest: /opt/docker/beszel-agent/compose.yml
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Redémarrer l'agent Beszel
+
+- name: Démarrer l'agent Beszel
+  community.docker.docker_compose_v2:
+    project_src: /opt/docker/beszel-agent
+    files: [compose.yml]
+    state: present
+

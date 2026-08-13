@@ -1,5 +1,11 @@
 {{ domain }} {
     import common
+{% if uptime_kuma_authentik_enabled | default(false) | bool %}
+    route {
+        import authentik
+        reverse_proxy uptime-kuma:3001
+    }
+{% else %}
     reverse_proxy uptime-kuma:3001
+{% endif %}
 }
-

@@ -48,12 +48,21 @@
     - role: termix
       vars:
         domain: "{{ termix_domain }}"
+        termix_authentik_enabled: true
     - role: uptime_kuma
       vars:
         domain: "{{ uptime_kuma_domain }}"
+        uptime_kuma_authentik_enabled: true
     - role: beszel
       vars:
         domain: "{{ beszel_domain }}"
+        beszel_authentik_enabled: true
+    - role: beszel_agent
+      when:
+        - beszel_agent_key is defined
+        - beszel_agent_token is defined
+      vars:
+        beszel_hub_url: "https://{{ beszel_domain }}"
     - role: homepage
       vars:
         domain: "{{ homepage_domain }}"
