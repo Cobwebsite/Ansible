@@ -202,6 +202,30 @@
     fail_msg: >-
       Termix n'utilise pas exclusivement le provider OIDC signé attendu.
 
+- name: Vérifier la signature OIDC de Semaphore
+  ansible.builtin.command:
+    argv:
+      - docker
+      - exec
+      - authentik-worker
+      - ak
+      - shell
+      - -c
+      - >-
+        from authentik.core.models import Application;
+        from authentik.providers.oauth2.models import OAuth2Provider;
+        app = Application.objects.get(slug='semaphore');
+        provider = OAuth2Provider.objects.filter(pk=app.provider_id).first();
+        print(int(provider is not None and provider.signing_key_id is not None))
+  register: authentik_sso_semaphore_oidc
+  changed_when: false
+
+- name: Valider la signature OIDC de Semaphore
+  ansible.builtin.assert:
+    that:
+      - authentik_sso_semaphore_oidc.stdout_lines | last == '1'
+    fail_msg: Le provider OIDC Semaphore ne possède pas de clé de signature.
+
 - name: Vérifier le groupe SSO Authentik
   ansible.builtin.command:
     argv:
