@@ -132,7 +132,7 @@ cas, la protection Authentik est désactivée sauf si
 ### Serveur slave
 
 Pour installer Docker, configurer SSH, déployer Caddy et Portainer Agent en une
-seule tâche, utiliser `playbooks/installation/10-install-slave.yml` :
+seule tâche, utiliser `playbooks/installation/00-install-slave.yml` :
 
 ```yaml
 portainer_agent_domain: agent.example.com

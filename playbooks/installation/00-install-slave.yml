@@ -21,4 +21,3 @@
       vars:
         domain: "{{ portainer_agent_domain }}"
     - role: beszel_agent
-
