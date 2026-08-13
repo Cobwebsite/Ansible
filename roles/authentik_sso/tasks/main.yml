@@ -318,13 +318,13 @@
         stage = UserLoginStage.objects.get(
           name='default-authentication-login'
         );
-        print(stage.session_duration.total_seconds())
+        print(stage.session_duration)
   register: authentik_sso_session_duration
   changed_when: false
 
 - name: Valider la durée de session Authentik
   ansible.builtin.assert:
     that:
-      - authentik_sso_session_duration.stdout_lines | last | int == 2592000
+      - authentik_sso_session_duration.stdout_lines | last == 'days=30'
     fail_msg: >-
       La durée de session Authentik n'est pas configurée à 30 jours.
