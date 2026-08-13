@@ -75,7 +75,9 @@
     - name: Vérifier qu'une clé SFTP a été reçue
       ansible.builtin.assert:
         that:
-          - restore_sftp_host_keys.stdout_lines | length > 0
+          - >-
+            restore_sftp_host_keys.stdout_lines |
+            reject('match', '^#') | list | length > 0
         fail_msg: >-
           Impossible de récupérer la clé SSH du serveur SFTP
           {{ sftp_hostname }}:{{ sftp_port }}.
@@ -87,7 +89,9 @@
         name: "{{ sftp_known_host_name }}"
         key: "{{ item }}"
         state: present
-      loop: "{{ restore_sftp_host_keys.stdout_lines }}"
+      loop: >-
+        {{ restore_sftp_host_keys.stdout_lines |
+        reject('match', '^#') | list }}
       when: restore_sftp_known_host.rc != 0
 
     - name: Restore database
