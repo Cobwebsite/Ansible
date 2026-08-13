@@ -22,27 +22,18 @@
           - ftp_password | length > 0
           - remote_ftp_path is defined
           - remote_ftp_path | length > 0
+          - remote_ftp_path is match('^/[A-Za-z0-9._/-]*$')
         fail_msg: >-
-          La restauration doit être confirmée avec confirm_restore: true et la
+          La restauration doit être confirmée avec confirm_restore: true et
           les variables restore_file et SFTP sont obligatoires.
           Exemple:
           mysql_dump_2026-08-08T02-00-00.sql.gz
 
-    - name: Vérifier que curl prend en charge SFTP
-      ansible.builtin.command:
-        argv:
-          - curl
-          - --version
-      register: restore_curl_version
-      changed_when: false
-
-    - name: Valider la prise en charge SFTP de curl
-      ansible.builtin.assert:
-        that:
-          - restore_curl_version.stdout is regex('(?im)^Protocols:.*\bsftp\b')
-        fail_msg: >-
-          La version de curl installée sur la cible ne prend pas en charge SFTP.
-          Installez un paquet curl compilé avec libssh2.
+    - name: Installer le client SFTP lftp
+      ansible.builtin.apt:
+        name: lftp
+        state: present
+        update_cache: true
 
     - name: Restore database
       block:
@@ -50,15 +41,17 @@
         - name: Download backup from SFTP
           ansible.builtin.command:
             argv:
-              - curl
-              - --fail
-              - --show-error
-              - --silent
-              - --user
-              - "{{ ftp_user }}:{{ ftp_password }}"
-              - --output
-              - "{{ local_restore_file }}"
-              - "sftp://{{ ftp_host }}{{ remote_ftp_path }}/{{ restore_file }}"
+              - lftp
+              - -u
+              - "{{ ftp_user }},{{ ftp_password }}"
+              - -e
+              - >-
+                set net:max-retries 1;
+                set net:timeout 20;
+                get {{ remote_ftp_path }}/{{ restore_file }}
+                -o {{ local_restore_file }};
+                bye
+              - "sftp://{{ ftp_host }}"
           register: restore_download
           failed_when: false
           no_log: true
@@ -68,7 +61,7 @@
             that:
               - restore_download.rc == 0
             fail_msg: >-
-              Échec du téléchargement SFTP (curl rc={{ restore_download.rc }}):
+              Échec du téléchargement SFTP (lftp rc={{ restore_download.rc }}):
               {{ restore_download.stderr | default('aucun détail') |
               regex_replace(ftp_user | regex_escape, '[utilisateur masqué]') |
               regex_replace(ftp_password | regex_escape, '[mot de passe masqué]') }}
