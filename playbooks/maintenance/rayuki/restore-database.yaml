@@ -18,7 +18,7 @@
           - confirm_restore | default(false) | bool
           - restore_file is defined
           - restore_file | length > 0
-          - restore_file is match('^[A-Za-z0-9._-]+\.sql\.gz$')
+          - restore_file is match('^[A-Za-z0-9._-]+\.sql(\.gz)?$')
           - ftp_host is defined
           - ftp_host | length > 0
           - ftp_host is match('^[A-Za-z0-9.-]+(:[0-9]{1,5})?$')
@@ -41,7 +41,8 @@
           La restauration doit être confirmée avec confirm_restore: true et
           les variables restore_file et SFTP sont obligatoires.
           Exemple:
-          mysql_dump_2026-08-08T02-00-00.sql.gz
+          mysql_dump_2026-08-08T02-00-00.sql.gz ou
+          mysql_dump_2026-08-08T02-00-00.sql
 
     - name: Installer le client SFTP lftp
       ansible.builtin.apt:
@@ -151,6 +152,7 @@
               - --test
               - "{{ local_restore_file }}"
           changed_when: false
+          when: restore_file.endswith('.gz')
 
         - name: Détecter le client SQL dans le conteneur
           ansible.builtin.command:
@@ -226,7 +228,11 @@
           ansible.builtin.shell: |
             set -o pipefail
 
-            gzip -dc "{{ local_restore_file }}" | \
+            {% if restore_file.endswith('.gz') %}
+            gzip -dc {{ local_restore_file | quote }} | \
+            {% else %}
+            cat {{ local_restore_file | quote }} | \
+            {% endif %}
             docker exec -i \
               -e MYSQL_PWD="$RAYUKI_DB_PASSWORD" \
               {{ mysql_container | quote }} \
