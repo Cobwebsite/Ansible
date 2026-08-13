@@ -5,6 +5,11 @@
 
   vars:
     local_restore_file: "/tmp/{{ restore_file }}"
+    sftp_hostname: "{{ ftp_host.split(':')[0] }}"
+    sftp_port: "{{ ftp_host.split(':')[1] if ':' in ftp_host else '22' }}"
+    sftp_known_host_name: >-
+      {{ '[' ~ sftp_hostname ~ ']:' ~ sftp_port
+      if sftp_port != '22' else sftp_hostname }}
 
   tasks:
     - name: Validate restore file
@@ -16,6 +21,7 @@
           - restore_file is match('^[A-Za-z0-9._-]+\.sql\.gz$')
           - ftp_host is defined
           - ftp_host | length > 0
+          - ftp_host is match('^[A-Za-z0-9.-]+(:[0-9]{1,5})?$')
           - ftp_user is defined
           - ftp_user | length > 0
           - ftp_password is defined
@@ -34,6 +40,55 @@
         name: lftp
         state: present
         update_cache: true
+
+    - name: Créer le répertoire SSH de root
+      ansible.builtin.file:
+        path: /root/.ssh
+        state: directory
+        owner: root
+        group: root
+        mode: "0700"
+
+    - name: Vérifier si la clé du serveur SFTP est déjà connue
+      ansible.builtin.command:
+        argv:
+          - ssh-keygen
+          - -F
+          - "{{ sftp_known_host_name }}"
+          - -f
+          - /root/.ssh/known_hosts
+      register: restore_sftp_known_host
+      changed_when: false
+      failed_when: false
+
+    - name: Lire la clé publique du serveur SFTP lors de la première connexion
+      ansible.builtin.command:
+        argv:
+          - ssh-keyscan
+          - -p
+          - "{{ sftp_port }}"
+          - "{{ sftp_hostname }}"
+      register: restore_sftp_host_keys
+      changed_when: false
+      when: restore_sftp_known_host.rc != 0
+
+    - name: Vérifier qu'une clé SFTP a été reçue
+      ansible.builtin.assert:
+        that:
+          - restore_sftp_host_keys.stdout_lines | length > 0
+        fail_msg: >-
+          Impossible de récupérer la clé SSH du serveur SFTP
+          {{ sftp_hostname }}:{{ sftp_port }}.
+      when: restore_sftp_known_host.rc != 0
+
+    - name: Enregistrer la clé du serveur SFTP
+      ansible.builtin.known_hosts:
+        path: /root/.ssh/known_hosts
+        name: "{{ sftp_known_host_name }}"
+        key: "{{ item }}"
+        state: present
+      loop: "{{ restore_sftp_host_keys.stdout_lines }}"
+      when: restore_sftp_known_host.rc != 0
 
     - name: Restore database
       block:
