@@ -186,7 +186,9 @@
         from authentik.providers.oauth2.models import OAuth2Provider;
         from authentik.providers.proxy.models import ProxyProvider;
         app = Application.objects.get(slug='termix');
-        print(int(OAuth2Provider.objects.filter(pk=app.provider_id).exists()));
+        provider = OAuth2Provider.objects.filter(pk=app.provider_id).first();
+        print(int(provider is not None));
+        print(int(provider is not None and provider.signing_key_id is not None));
         print(ProxyProvider.objects.filter(name='Termix').count())
   register: authentik_sso_termix_oidc
   changed_when: false
@@ -194,9 +196,11 @@
 - name: Valider la migration de Termix vers OIDC
   ansible.builtin.assert:
     that:
+      - authentik_sso_termix_oidc.stdout_lines[-3] == '1'
       - authentik_sso_termix_oidc.stdout_lines[-2] == '1'
       - authentik_sso_termix_oidc.stdout_lines[-1] == '0'
-    fail_msg: Termix n'utilise pas exclusivement le provider OIDC attendu.
+    fail_msg: >-
+      Termix n'utilise pas exclusivement le provider OIDC signé attendu.
 
 - name: Vérifier le groupe SSO Authentik
   ansible.builtin.command:
