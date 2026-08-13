@@ -95,6 +95,42 @@
   register: authentik_sso_blueprint_apply
   changed_when: authentik_sso_blueprint.changed
 
+- name: Configurer le stage WebAuthn du formulaire d'identification
+  ansible.builtin.command:
+    argv:
+      - docker
+      - exec
+      - authentik-worker
+      - ak
+      - shell
+      - -c
+      - >-
+        from authentik.flows.models import Stage;
+        from authentik.stages.identification.api import IdentificationStageSerializer;
+        from authentik.stages.identification.models import IdentificationStage;
+        stage = IdentificationStage.objects.get(
+          name='default-authentication-identification'
+        );
+        expected = Stage.objects.get(
+          name='default-authentication-mfa-validation'
+        );
+        reader = IdentificationStageSerializer(stage);
+        field = next(
+          name for name in reader.fields
+          if 'webauthn' in name and 'stage' in name
+        );
+        changed = str(reader.data.get(field)) != str(expected.pk);
+        updater = IdentificationStageSerializer(
+          stage,
+          data={field: str(expected.pk)},
+          partial=True
+        );
+        updater.is_valid(raise_exception=True) if changed else None;
+        updater.save() if changed else None;
+        print(int(changed))
+  register: authentik_sso_webauthn_update
+  changed_when: authentik_sso_webauthn_update.stdout_lines | last == '1'
+
 - name: Supprimer l'ancien Proxy Provider Termix après la migration OIDC
   ansible.builtin.command:
     argv:
@@ -248,9 +284,12 @@
         expected = Stage.objects.get(
           name='default-authentication-mfa-validation'
         );
-        value = IdentificationStageSerializer(stage).data.get(
-          'webauthn_authenticator_validation_stage'
+        reader = IdentificationStageSerializer(stage);
+        field = next(
+          name for name in reader.fields
+          if 'webauthn' in name and 'stage' in name
         );
+        value = reader.data.get(field);
         print(int(str(value) == str(expected.pk)))
   register: authentik_sso_webauthn_stage
   changed_when: false
