@@ -48,7 +48,7 @@
     - role: termix
       vars:
         domain: "{{ termix_domain }}"
-        termix_authentik_enabled: true
+        termix_oidc_enabled: true
     - role: uptime_kuma
       vars:
         domain: "{{ uptime_kuma_domain }}"

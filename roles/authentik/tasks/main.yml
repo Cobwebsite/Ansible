@@ -51,6 +51,8 @@
     portainer_client_secret="$(openssl rand -hex 48)"
     semaphore_client_id="$(openssl rand -hex 24)"
     semaphore_client_secret="$(openssl rand -hex 48)"
+    termix_client_id="$(openssl rand -hex 24)"
+    termix_client_secret="$(openssl rand -hex 48)"
     {
       printf 'PG_PASS=%s\n' "$pg_pass"
       printf 'AUTHENTIK_SECRET_KEY=%s\n' "$secret_key"
@@ -59,10 +61,32 @@
       printf 'PORTAINER_OIDC_CLIENT_SECRET=%s\n' "$portainer_client_secret"
       printf 'SEMAPHORE_OIDC_CLIENT_ID=%s\n' "$semaphore_client_id"
       printf 'SEMAPHORE_OIDC_CLIENT_SECRET=%s\n' "$semaphore_client_secret"
+      printf 'TERMIX_OIDC_CLIENT_ID=%s\n' "$termix_client_id"
+      printf 'TERMIX_OIDC_CLIENT_SECRET=%s\n' "$termix_client_secret"
     } > /opt/docker/authentik/.env
   args:
     executable: /bin/bash
   when: not authentik_env.stat.exists
+  no_log: true
+
+- name: Ajouter les secrets OIDC Termix sur une installation existante
+  ansible.builtin.shell: |
+    set -o errexit -o nounset
+    umask 077
+    changed=false
+    if ! grep -q '^TERMIX_OIDC_CLIENT_ID=' /opt/docker/authentik/.env; then
+      printf 'TERMIX_OIDC_CLIENT_ID=%s\n' "$(openssl rand -hex 24)" >> /opt/docker/authentik/.env
+      changed=true
+    fi
+    if ! grep -q '^TERMIX_OIDC_CLIENT_SECRET=' /opt/docker/authentik/.env; then
+      printf 'TERMIX_OIDC_CLIENT_SECRET=%s\n' "$(openssl rand -hex 48)" >> /opt/docker/authentik/.env
+      changed=true
+    fi
+    "$changed" && printf 'changed\n' || true
+  args:
+    executable: /bin/bash
+  register: authentik_termix_secrets
+  changed_when: "'changed' in authentik_termix_secrets.stdout_lines"
   no_log: true
 
 - name: Installer la stack Authentik

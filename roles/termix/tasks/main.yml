@@ -7,14 +7,26 @@
     group: root
     mode: "0755"
 
+- name: Vérifier que le rôle Authentik SSO a préparé Termix
+  ansible.builtin.assert:
+    that:
+      - authentik_domain is defined
+      - termix_oidc_client_id is defined
+      - termix_oidc_client_secret is defined
+      - termix_oidc_client_id | length > 0
+      - termix_oidc_client_secret | length > 0
+    fail_msg: Exécutez le rôle authentik_sso avant le rôle termix.
+  when: termix_oidc_enabled | default(false) | bool
+
 - name: Installer la stack Termix
-  ansible.builtin.copy:
-    src: compose.yml
+  ansible.builtin.template:
+    src: compose.yml.j2
     dest: /opt/docker/termix/compose.yml
     owner: root
     group: root
-    mode: "0644"
+    mode: "0600"
   notify: Redémarrer Termix
+  no_log: true
 
 - name: Démarrer Termix
   community.docker.docker_compose_v2:

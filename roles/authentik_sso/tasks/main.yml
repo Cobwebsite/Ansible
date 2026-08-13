@@ -28,6 +28,8 @@
     - PORTAINER_OIDC_CLIENT_SECRET
     - SEMAPHORE_OIDC_CLIENT_ID
     - SEMAPHORE_OIDC_CLIENT_SECRET
+    - TERMIX_OIDC_CLIENT_ID
+    - TERMIX_OIDC_CLIENT_SECRET
   register: authentik_sso_secret_values
   changed_when: false
   no_log: true
@@ -38,6 +40,8 @@
     portainer_oidc_client_secret: "{{ authentik_sso_secret_values.results[1].stdout }}"
     semaphore_oidc_client_id: "{{ authentik_sso_secret_values.results[2].stdout }}"
     semaphore_oidc_client_secret: "{{ authentik_sso_secret_values.results[3].stdout }}"
+    termix_oidc_client_id: "{{ authentik_sso_secret_values.results[4].stdout }}"
+    termix_oidc_client_secret: "{{ authentik_sso_secret_values.results[5].stdout }}"
   no_log: true
 
 - name: Valider les secrets OIDC chargés
@@ -47,6 +51,8 @@
       - portainer_oidc_client_secret | length > 0
       - semaphore_oidc_client_id | length > 0
       - semaphore_oidc_client_secret | length > 0
+      - termix_oidc_client_id | length > 0
+      - termix_oidc_client_secret | length > 0
     fail_msg: Le fichier /opt/docker/authentik/.env ne contient pas les secrets OIDC attendus.
   no_log: true
 
@@ -89,6 +95,24 @@
   register: authentik_sso_blueprint_apply
   changed_when: authentik_sso_blueprint.changed
 
+- name: Supprimer l'ancien Proxy Provider Termix après la migration OIDC
+  ansible.builtin.command:
+    argv:
+      - docker
+      - exec
+      - authentik-worker
+      - ak
+      - shell
+      - -c
+      - >-
+        from authentik.providers.proxy.models import ProxyProvider;
+        providers = ProxyProvider.objects.filter(name='Termix');
+        count = providers.count();
+        providers.delete();
+        print(count)
+  register: authentik_sso_termix_proxy_cleanup
+  changed_when: authentik_sso_termix_proxy_cleanup.stdout_lines | last | int > 0
+
 - name: Compter les applications gérées dans Authentik
   ansible.builtin.command:
     argv:
@@ -111,6 +135,32 @@
     fail_msg: >-
       Authentik n'a pas créé les six applications attendues : Portainer,
       Semaphore, Homepage, Beszel, Uptime Kuma et Termix.
+
+- name: Vérifier la migration de Termix vers OIDC
+  ansible.builtin.command:
+    argv:
+      - docker
+      - exec
+      - authentik-worker
+      - ak
+      - shell
+      - -c
+      - >-
+        from authentik.core.models import Application;
+        from authentik.providers.oauth2.models import OAuth2Provider;
+        from authentik.providers.proxy.models import ProxyProvider;
+        app = Application.objects.get(slug='termix');
+        print(int(OAuth2Provider.objects.filter(pk=app.provider_id).exists()));
+        print(ProxyProvider.objects.filter(name='Termix').count())
+  register: authentik_sso_termix_oidc
+  changed_when: false
+
+- name: Valider la migration de Termix vers OIDC
+  ansible.builtin.assert:
+    that:
+      - authentik_sso_termix_oidc.stdout_lines[-2] == '1'
+      - authentik_sso_termix_oidc.stdout_lines[-1] == '0'
+    fail_msg: Termix n'utilise pas exclusivement le provider OIDC attendu.
 
 - name: Vérifier le groupe SSO Authentik
   ansible.builtin.command:

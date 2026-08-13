@@ -60,11 +60,11 @@ qu'une version incompatible soit conservée ou téléchargée.
 
 ### SSO Authentik
 
-Le playbook master automatise le SSO natif de Portainer et Semaphore. Le rôle
+Le playbook master automatise le SSO natif de Portainer, Semaphore et Termix.
 Le rôle `authentik` génère une seule fois les identifiants OAuth/OIDC dans
 `/opt/docker/authentik/.env`, puis `authentik_sso` déploie un Blueprint sous
 `/opt/docker/authentik/blueprints`. Ce Blueprint crée et maintient les couples
-Application/Provider `portainer` et `semaphore` dans Authentik.
+Application/Provider `portainer`, `semaphore` et `termix` dans Authentik.
 
 Portainer est initialisé avec un compte local `admin` dont le mot de passe est
 généré et affiché à la première exécution. Ansible utilise ce compte uniquement
@@ -76,18 +76,19 @@ Semaphore reçoit sa configuration OIDC dans son Compose. Les nouveaux comptes
 OIDC Semaphore n'ont volontairement aucun droit par défaut : utiliser le compte
 local `admin` affiché lors de l'installation pour leur attribuer les permissions.
 
-Les routes Caddy de Portainer et Semaphore n'utilisent plus `forward_auth` dans
-le master, car chacune de ces applications gère directement sa session OIDC.
-Homepage, Uptime Kuma et Termix sont protégés par le snippet Caddy `authentik`.
+Les routes Caddy de Portainer, Semaphore et Termix n'utilisent plus
+`forward_auth` dans le master, car chacune de ces applications gère directement
+sa session OIDC.
+Homepage et Uptime Kuma sont protégés par le snippet Caddy `authentik`.
 Beszel utilise également `forward_auth`, puis connecte automatiquement
 l'utilisateur à partir de l'en-tête vérifié `X-Authentik-Email`. Ses variables
 `TRUSTED_AUTH_HEADER` et `USER_CREATION` sont configurées par le master.
 
-Les providers OIDC Portainer et Semaphore déclarent explicitement les flux
+Les providers OIDC Portainer, Semaphore et Termix déclarent explicitement les flux
 `authorization_code` et `refresh_token`, requis pour les providers créés avec
 Authentik 2026.5.
 
-Les Proxy Providers Homepage, Beszel, Uptime Kuma et Termix ainsi que leur
+Les Proxy Providers Homepage, Beszel et Uptime Kuma ainsi que leur
 association à l'Embedded Outpost sont créés par le Blueprint. Aucune création
 d'application n'est nécessaire dans l'interface Authentik.
 Le domaine public de l'Embedded Outpost est configuré automatiquement avec

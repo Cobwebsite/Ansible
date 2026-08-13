@@ -1,0 +1,43 @@
+services:
+  termix:
+    image: ghcr.io/lukegus/termix:latest
+    container_name: termix
+    restart: unless-stopped
+    environment:
+      PORT: "8080"
+{% if termix_oidc_enabled | default(false) | bool %}
+      OIDC_CLIENT_ID: "{{ termix_oidc_client_id }}"
+      OIDC_CLIENT_SECRET: "{{ termix_oidc_client_secret }}"
+      OIDC_ISSUER_URL: "https://{{ authentik_domain }}/application/o/termix/"
+      OIDC_AUTHORIZATION_URL: "https://{{ authentik_domain }}/application/o/authorize/"
+      OIDC_TOKEN_URL: "https://{{ authentik_domain }}/application/o/token/"
+      OIDC_USERINFO_URL: "https://{{ authentik_domain }}/application/o/userinfo/"
+      OIDC_SCOPES: "openid email profile"
+      OIDC_ALLOW_REGISTRATION: "true"
+      OIDC_FORCE_HTTPS: "true"
+{% endif %}
+    volumes:
+      - termix_data:/app/data
+    depends_on:
+      - guacd
+    networks:
+      - termix_internal
+      - proxy
+
+  guacd:
+    image: guacamole/guacd:1.6.0
+    container_name: termix-guacd
+    restart: unless-stopped
+    networks:
+      - termix_internal
+
+volumes:
+  termix_data:
+
+networks:
+  termix_internal:
+    internal: true
+  proxy:
+    external: true
+    name: proxy
+

@@ -1,6 +1,6 @@
 {{ domain }} {
     import common
-{% if termix_authentik_enabled | default(false) | bool %}
+{% if not (termix_oidc_enabled | default(false) | bool) and (termix_authentik_enabled | default(false) | bool) %}
     route {
         import authentik
         reverse_proxy termix:8080
