@@ -29,6 +29,14 @@
           - remote_ftp_path is defined
           - remote_ftp_path | length > 0
           - remote_ftp_path is match('^/[A-Za-z0-9._/-]*$')
+          - mysql_container is defined
+          - mysql_container is match('^[A-Za-z0-9_.-]+$')
+          - db_user is defined
+          - db_user is match('^[A-Za-z0-9_.-]+$')
+          - db_password is defined
+          - db_password | length > 0
+          - db_name is defined
+          - db_name is match('^[A-Za-z0-9_]+$')
         fail_msg: >-
           La restauration doit être confirmée avec confirm_restore: true et
           les variables restore_file et SFTP sont obligatoires.
@@ -144,29 +152,75 @@
               - "{{ local_restore_file }}"
           changed_when: false
 
+        - name: Détecter le client SQL dans le conteneur
+          ansible.builtin.command:
+            argv:
+              - docker
+              - exec
+              - "{{ mysql_container }}"
+              - sh
+              - -c
+              - command -v mariadb || command -v mysql
+          register: restore_db_client
+          changed_when: false
+
+        - name: Mémoriser le client SQL détecté
+          ansible.builtin.set_fact:
+            restore_db_client_path: "{{ restore_db_client.stdout_lines | last }}"
+
         - name: Drop existing database
-          ansible.builtin.shell: |
-            docker exec \
-              -e MYSQL_PWD='{{ db_password }}' \
-              {{ mysql_container }} \
-              mysql \
-              -u{{ db_user }} \
-              -e "DROP DATABASE IF EXISTS \`{{ db_name }}\`;"
-          args:
-            executable: /bin/bash
+          ansible.builtin.command:
+            argv:
+              - docker
+              - exec
+              - -e
+              - "MYSQL_PWD={{ db_password }}"
+              - "{{ mysql_container }}"
+              - "{{ restore_db_client_path }}"
+              - "-u{{ db_user }}"
+              - -e
+              - "DROP DATABASE IF EXISTS `{{ db_name }}`;"
+          register: restore_db_drop
+          failed_when: false
           no_log: true
 
+        - name: Vérifier la suppression de la base existante
+          ansible.builtin.assert:
+            that:
+              - restore_db_drop.rc == 0
+            fail_msg: >-
+              Échec de la suppression de {{ db_name }} dans
+              {{ mysql_container }} (rc={{ restore_db_drop.rc }}):
+              {{ restore_db_drop.stderr | default('aucun détail') |
+              regex_replace(db_password | regex_escape, '[mot de passe masqué]') }}
+
         - name: Create empty database
-          ansible.builtin.shell: |
-            docker exec \
-              -e MYSQL_PWD='{{ db_password }}' \
-              {{ mysql_container }} \
-              mysql \
-              -u{{ db_user }} \
-              -e "CREATE DATABASE \`{{ db_name }}\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;"
-          args:
-            executable: /bin/bash
+          ansible.builtin.command:
+            argv:
+              - docker
+              - exec
+              - -e
+              - "MYSQL_PWD={{ db_password }}"
+              - "{{ mysql_container }}"
+              - "{{ restore_db_client_path }}"
+              - "-u{{ db_user }}"
+              - -e
+              - >-
+                CREATE DATABASE `{{ db_name }}` CHARACTER SET utf8mb4
+                COLLATE utf8mb4_unicode_ci;
+          register: restore_db_create
+          failed_when: false
           no_log: true
+
+        - name: Vérifier la création de la base vide
+          ansible.builtin.assert:
+            that:
+              - restore_db_create.rc == 0
+            fail_msg: >-
+              Échec de la création de {{ db_name }} dans
+              {{ mysql_container }} (rc={{ restore_db_create.rc }}):
+              {{ restore_db_create.stderr | default('aucun détail') |
+              regex_replace(db_password | regex_escape, '[mot de passe masqué]') }}
 
         - name: Restore database from backup
           ansible.builtin.shell: |
@@ -174,14 +228,28 @@
 
             gzip -dc "{{ local_restore_file }}" | \
             docker exec -i \
-              -e MYSQL_PWD='{{ db_password }}' \
-              {{ mysql_container }} \
-              mysql \
-              -u{{ db_user }} \
-              {{ db_name }}
+              -e MYSQL_PWD="$RAYUKI_DB_PASSWORD" \
+              {{ mysql_container | quote }} \
+              {{ restore_db_client_path | quote }} \
+              -u{{ db_user | quote }} \
+              {{ db_name | quote }}
           args:
             executable: /bin/bash
+          environment:
+            RAYUKI_DB_PASSWORD: "{{ db_password }}"
+          register: restore_db_import
+          failed_when: false
           no_log: true
+
+        - name: Vérifier l'import de la sauvegarde
+          ansible.builtin.assert:
+            that:
+              - restore_db_import.rc == 0
+            fail_msg: >-
+              Échec de l'import dans {{ db_name }}
+              (rc={{ restore_db_import.rc }}):
+              {{ restore_db_import.stderr | default('aucun détail') |
+              regex_replace(db_password | regex_escape, '[mot de passe masqué]') }}
 
         - name: Restore completed
           ansible.builtin.debug:
