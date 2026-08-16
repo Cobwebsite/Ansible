@@ -1,0 +1,6 @@
+---
+- name: Configurer le swap sur Debian 13
+  hosts: "{{ target | default('all') }}"
+  become: true
+  roles:
+    - role: swap

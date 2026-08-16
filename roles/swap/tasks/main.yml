@@ -1,0 +1,83 @@
+---
+- name: Valider la configuration du swap
+  ansible.builtin.assert:
+    that:
+      - swap_file_path is string
+      - swap_file_path.startswith('/')
+      - swap_size_mb | int > 0
+      - swap_swappiness | int >= 0
+      - swap_swappiness | int <= 200
+    fail_msg: >-
+      swap_file_path doit être un chemin absolu, swap_size_mb doit être
+      supérieur à 0 et swap_swappiness doit être compris entre 0 et 200.
+  when: swap_enabled | bool
+
+- name: Vérifier si le fichier de swap existe
+  ansible.builtin.stat:
+    path: "{{ swap_file_path }}"
+  register: swap_file
+  when: swap_enabled | bool
+
+- name: Créer le fichier de swap
+  ansible.builtin.command:
+    argv:
+      - fallocate
+      - -l
+      - "{{ swap_size_mb | int }}M"
+      - "{{ swap_file_path }}"
+  when:
+    - swap_enabled | bool
+    - not swap_file.stat.exists
+  changed_when: true
+
+- name: Restreindre les permissions du fichier de swap
+  ansible.builtin.file:
+    path: "{{ swap_file_path }}"
+    owner: root
+    group: root
+    mode: "0600"
+  when: swap_enabled | bool
+
+- name: Initialiser le fichier de swap
+  ansible.builtin.command:
+    argv:
+      - mkswap
+      - "{{ swap_file_path }}"
+  when:
+    - swap_enabled | bool
+    - not swap_file.stat.exists
+  changed_when: true
+
+- name: Rendre le swap persistant
+  ansible.builtin.lineinfile:
+    path: /etc/fstab
+    regexp: "^{{ swap_file_path | regex_escape }}\\s+"
+    line: "{{ swap_file_path }} none swap sw 0 0"
+    state: present
+  when: swap_enabled | bool
+
+- name: Lire les swaps actifs
+  ansible.builtin.command:
+    cmd: swapon --show=NAME --noheadings
+  register: active_swaps
+  changed_when: false
+  when: swap_enabled | bool
+
+- name: Activer le fichier de swap
+  ansible.builtin.command:
+    argv:
+      - swapon
+      - "{{ swap_file_path }}"
+  when:
+    - swap_enabled | bool
+    - swap_file_path not in active_swaps.stdout_lines
+  changed_when: true
+
+- name: Configurer la propension à utiliser le swap
+  ansible.posix.sysctl:
+    name: vm.swappiness
+    value: "{{ swap_swappiness | int }}"
+    state: present
+    sysctl_set: true
+    reload: true
+  when: swap_enabled | bool

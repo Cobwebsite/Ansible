@@ -14,6 +14,7 @@
           Fournissez un domaine valide dans la variable
           portainer_agent_domain.
   roles:
+    - role: swap
     - role: docker
     - role: ssh_password
     - role: caddy

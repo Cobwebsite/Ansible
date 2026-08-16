@@ -20,9 +20,10 @@ l'interface :
 - l'élévation de privilèges (`become`) ;
 - les variables nécessaires à chaque template de tâche.
 
-La collection `community.docker` déclarée dans `requirements.yml` doit être
-installée dans l'environnement qui exécute Ansible. Les rôles du dépôt sont
-trouvés grâce au `roles_path = roles` conservé dans `ansible.cfg`.
+Les collections `community.docker` et `ansible.posix` déclarées dans
+`requirements.yml` doivent être installées dans l'environnement qui exécute
+Ansible. Les rôles du dépôt sont trouvés grâce au `roles_path = roles` conservé
+dans `ansible.cfg`.
 
 ### Serveur master
 
@@ -45,6 +46,21 @@ termix_domain: termix.example.com
 uptime_kuma_domain: status.example.com
 beszel_domain: monitoring.example.com
 homepage_domain: home.example.com
+swap_size_mb: 2048
+swap_swappiness: 10
+```
+
+Le playbook crée par défaut un fichier de swap de 2 Gio dans `/swapfile` et
+configure `vm.swappiness` à `10`. Utiliser `swap_size_mb` et `swap_swappiness`
+pour adapter ces valeurs, `swap_file_path` pour changer son emplacement, ou
+`swap_enabled: false` pour ne pas configurer de swap.
+
+Le swap peut également être configuré seul avec
+`playbooks/installation/10-configure-swap.yml` :
+
+```bash
+ansible-playbook playbooks/installation/10-configure-swap.yml \
+  -e "target=mon_serveur swap_size_mb=2048 swap_swappiness=10"
 ```
 
 Le master installe également Authentik, Termix avec `guacd`, Uptime Kuma 2 et le
@@ -140,7 +156,14 @@ portainer_agent_domain: agent.example.com
 beszel_hub_url: https://monitoring.example.com
 beszel_agent_key: "ssh-ed25519 AAAA..."
 beszel_agent_token: "token universel secret"
+swap_size_mb: 2048
+swap_swappiness: 10
 ```
+
+Comme sur le master, le playbook crée par défaut un fichier de swap de 2 Gio
+dans `/swapfile` avec `vm.swappiness` à `10`. Les variables `swap_size_mb`,
+`swap_swappiness`, `swap_file_path` et `swap_enabled` permettent de personnaliser
+ou de désactiver cette étape.
 
 Le port `9001` de l'Agent n'est pas publié sur l'hôte. Caddy est le seul point
 d'entrée public. Dans Portainer master, ajouter ensuite un environnement Docker

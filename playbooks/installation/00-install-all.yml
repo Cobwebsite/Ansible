@@ -30,6 +30,7 @@
           Fournissez sept domaines valides et différents pour Portainer,
           Semaphore, Authentik, Termix, Uptime Kuma, Beszel et Homepage.
   roles:
+    - role: swap
     - role: docker
     - role: ssh_password
     - role: caddy
